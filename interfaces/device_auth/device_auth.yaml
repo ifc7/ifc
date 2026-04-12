@@ -1,0 +1,286 @@
+openapi: 3.0.3
+info:
+  title: IFC device authentication (OAuth 2 device flow)
+  description: |
+    Describes the HTTP API used by `internal/pkg/auth` for the OAuth 2.0
+    **Device Authorization Grant** (RFC 8628) against the IFC device-auth host.
+
+    The client uses a **single** path, `POST /token`, for both steps:
+    1. **Request device codes** — `client_id` only (no `grant_type`).
+    2. **Poll for tokens** — `client_id`, `device_code`, and
+       `grant_type=urn:ietf:params:oauth:grant-type:device_code`.
+
+    Requests duplicate form fields in the **query string** and **body** so that
+    infrastructure (e.g. ALB → Lambda) that only forwards one of them still works.
+
+    **Token refresh** uses the standard AWS Cognito **`POST /oauth2/token`**
+    endpoint on the Cognito **hosted UI domain** (see `RefreshTokens` in
+    `internal/pkg/auth`). That operation is documented below with its own
+    `servers` entry so the path is not combined with the device-auth host.
+  version: 0.1.0
+
+servers:
+  - url: https://device-auth.dev.ifc7.dev
+    description: Development device-auth (matches `deviceFlowHost` in auth package)
+
+paths:
+  /token:
+    post:
+      summary: Device flow token endpoint (request codes or exchange device code)
+      description: |
+        **Step A — device authorization:** POST with only `client_id` to obtain
+        `device_code`, `user_code`, and verification URIs.
+
+        **Step B — token:** POST with `client_id`, `device_code`, and
+        `grant_type` set to the device code grant to poll until the user
+        completes authorization or the code expires.
+
+        On step B, a `200` response carries access (and optionally refresh)
+        tokens. Non-success responses while polling often return HTTP 400 (or
+        similar) with a JSON body where `error` may be `authorization_pending`
+        or `slow_down` (client should wait and retry).
+      operationId: postToken
+      parameters:
+        - $ref: "#/components/parameters/ClientIdQuery"
+        - $ref: "#/components/parameters/DeviceCodeQuery"
+        - $ref: "#/components/parameters/GrantTypeQuery"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/DeviceAuthorizationRequest"
+                - $ref: "#/components/schemas/DeviceTokenPollRequest"
+            examples:
+              requestDeviceCodes:
+                summary: Step A — request device and user codes
+                value:
+                  client_id: "2sok1jbb7683fgg011r85jprds"
+              pollForTokens:
+                summary: Step B — poll with device code
+                value:
+                  client_id: "2sok1jbb7683fgg011r85jprds"
+                  device_code: "<from step A>"
+                  grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+      responses:
+        "200":
+          description: |
+            Success. For step A, body is device authorization metadata.
+            For step B, body is an access token response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DeviceAuthorizationResponse"
+                  - $ref: "#/components/schemas/AccessTokenResponse"
+        "4XX":
+          description: |
+            Error from the authorization server. While polling (step B), expect
+            JSON with `error` set to OAuth 2 values such as
+            `authorization_pending`, `slow_down`, `expired_token`, or
+            `invalid_grant`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuth2ErrorResponse"
+              examples:
+                authorizationPending:
+                  value:
+                    error: authorization_pending
+                    error_description: The user has not yet completed authorization.
+                slowDown:
+                  value:
+                    error: slow_down
+                expired:
+                  value:
+                    error: expired_token
+      security:
+        - BasicAuth: []
+
+  /oauth2/token:
+    post:
+      summary: Refresh access token (Cognito OAuth 2 token endpoint)
+      description: |
+        Exchanges a **refresh token** for new **access** (and optionally
+        **refresh**) tokens. Used by `CredentialsService.RefreshTokens`.
+
+        Request is **`application/x-www-form-urlencoded`** with
+        `grant_type=refresh_token`, the public `client_id`, and the
+        `refresh_token` value. Unlike the device-flow calls, parameters are sent
+        in the **body only** (no duplicate query string in the current client).
+
+        Optional **HTTP Basic** authentication with
+        `base64(client_id + ":" + client_secret)` when a client secret is
+        configured (the bundled CLI client uses an empty secret).
+      operationId: postOAuth2TokenRefresh
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+            example:
+              grant_type: refresh_token
+              client_id: "2sok1jbb7683fgg011r85jprds"
+              refresh_token: "<refresh token from prior token response>"
+      responses:
+        "200":
+          description: New access token (and optional refresh token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+        default:
+          description: OAuth 2 error (e.g. invalid_grant).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuth2ErrorResponse"
+      security:
+        - BasicAuth: []
+
+components:
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: |
+        Optional. Used when the client has a `client_secret`; the CLI currently
+        uses an empty secret.
+
+  parameters:
+    ClientIdQuery:
+      name: client_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: OAuth 2 `client_id`. Sent in both query and body by the client.
+    DeviceCodeQuery:
+      name: device_code
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Device code from step A. Required for step B (poll).
+    GrantTypeQuery:
+      name: grant_type
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/GrantType'
+      description: Required for step B; must be the device code grant type.
+
+  schemas:
+    GrantType:
+      type: string
+      enum:
+        - urn:ietf:params:oauth:grant-type:device_code
+      description: |
+        A grant type to request.
+
+    DeviceAuthorizationRequest:
+      type: object
+      required:
+        - client_id
+      properties:
+        client_id:
+          type: string
+          description: Public OAuth 2 client identifier.
+      additionalProperties: false
+
+    DeviceTokenPollRequest:
+      type: object
+      required:
+        - client_id
+        - device_code
+        - grant_type
+      properties:
+        client_id:
+          type: string
+        device_code:
+          type: string
+        grant_type:
+          $ref: '#/components/schemas/GrantType'
+      additionalProperties: false
+
+    RefreshTokenRequest:
+      type: object
+      description: Cognito `/oauth2/token` body for the refresh_token grant (RFC 6749).
+      required:
+        - grant_type
+        - client_id
+        - refresh_token
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - refresh_token
+        client_id:
+          type: string
+          description: Same public client_id as the device flow.
+        refresh_token:
+          type: string
+      additionalProperties: false
+
+    DeviceAuthorizationResponse:
+      type: object
+      description: RFC 8628 §3.2 device authorization response.
+      required:
+        - device_code
+        - user_code
+        - verification_uri
+        - expires_in
+        - interval
+      properties:
+        device_code:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+          format: uri
+        verification_uri_complete:
+          type: string
+          format: uri
+          description: Pre-filled verification URI (preferred for UX).
+        expires_in:
+          type: integer
+          description: Lifetime of the `device_code` in seconds.
+        interval:
+          type: integer
+          description: Minimum polling interval in seconds; client may increase on `slow_down`.
+
+    AccessTokenResponse:
+      type: object
+      description: OAuth 2 access token success response (RFC 6749 §5.1).
+      required:
+        - access_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds.
+        refresh_token:
+          type: string
+          description: Optional refresh token for later renewal (Cognito).
+
+    OAuth2ErrorResponse:
+      type: object
+      description: OAuth 2 error response (RFC 6749 §5.2).
+      properties:
+        error:
+          type: string
+          description: |
+            Machine-readable error code. Observed values include
+            `authorization_pending`, `slow_down`, `expired_token`, `invalid_grant`.
+        error_description:
+          type: string
+          description: Human-readable detail; may be empty.

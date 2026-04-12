@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "borrowed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "A reference URI to a borrowed resource"
+          }
+        },
+        "required": ["ref"],
+        "additionalProperties": false
+      }
+    },
+    "owned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A local name for the owned resource"
+          },
+          "ref": {
+            "type": "string",
+            "description": "A reference URI to the owned resource"
+          },
+          "path": {
+            "type": "string",
+            "description": "A local filesystem path associated with the resource"
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

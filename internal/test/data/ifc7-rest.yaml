@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: API Directory
+  version: 0.1.0
+paths:
+  /apis:
+    get:
+      summary: List APIs
+      operationId: listApis
+      responses:
+        '200':
+          description: A list of APIs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Api'
+components:
+  schemas:
+    Api:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string

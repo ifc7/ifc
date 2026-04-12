@@ -1,0 +1,26 @@
+version: "2"
+run:
+  tests: true
+  timeout: 3m
+linters:
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - .*\.gen\.go$
+      - api/api.gen.go$
+      - infra
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
