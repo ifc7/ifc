@@ -8,8 +8,8 @@ const (
 	IfcManifestFile    = "manifest.json"
 	IfcCredentialsFile = "credentials.json"
 
-	DefaultAPIURL          = "https://dev.ifc7.dev/api/v0/"
-	DefaultAPIHost         = "dev.ifc7.dev"
+	DefaultAPIHost         = "staging.ifc7.dev"
+	DefaultAPIURL          = "https://" + DefaultAPIHost + "/api/v0/"
 	DeviceFlowClientId     = "4d14om5n01t8f29kja086002re"
 	DeviceFlowClientSecret = "" // no secret used
 	DeviceFlowURL          = "https://device-auth.nonprod.ifc7.dev"

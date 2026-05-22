@@ -42,15 +42,15 @@ func PromptNewRevisionCommit(ctx context.Context) (NewRevision, error) {
 }
 
 type InterfaceChange struct {
-	InterfaceId client.InterfaceId
-	Name        string
-	Definition  []byte
+	InterfaceId   client.InterfaceId
+	Name          string
+	Specification []byte
 }
 
 type InterfaceRevisionUpdate struct {
-	InterfaceId client.InterfaceId
-	Definition  []byte
-	Notes       string
+	InterfaceId   client.InterfaceId
+	Specification []byte
+	Notes         string
 }
 
 func RunBubbleTeaPushChangesTui(changes []InterfaceChange) ([]InterfaceRevisionUpdate, bool, error) {
@@ -120,9 +120,9 @@ func (m *pushChangesModel) getSelectedUpdates() []InterfaceRevisionUpdate {
 	for _, item := range m.items {
 		if item.selected {
 			updates = append(updates, InterfaceRevisionUpdate{
-				InterfaceId: item.change.InterfaceId,
-				Definition:  item.change.Definition,
-				Notes:       strings.TrimSpace(item.notes),
+				InterfaceId:   item.change.InterfaceId,
+				Specification: item.change.Specification,
+				Notes:         strings.TrimSpace(item.notes),
 			})
 		}
 	}
@@ -327,18 +327,30 @@ func createNewInterface(ctx context.Context, cl *client.ClientWithResponses, fil
 		return fmt.Errorf("error reading file: %w", err)
 	}
 	fmt.Println("Interface does not exist on the server, creating new interface...")
+	userID, err := cl.CurrentUserID(ctx)
+	if err != nil {
+		return err
+	}
 	tuiResponse := runBubleTeaNewInterfaceTui()
 	resp, err := cl.CreateInterfaceWithResponse(ctx, client.CreateInterfaceRequest{
-		Definition:  base64.StdEncoding.EncodeToString(fileBytes),
 		Description: tuiResponse.Description,
 		Name:        tuiResponse.Name,
 		Type:        tuiResponse.Type,
+		Owner:       userID,
+		IsPublic:    false, // TODO: gather public status from user
 	})
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode() != http.StatusCreated {
 		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode(), string(resp.Body))
+	}
+	_, err = cl.CreateInterfaceRevisionWithResponse(ctx, resp.JSON201.Id, client.CreateRevisionRequest{
+		Specification: base64.StdEncoding.EncodeToString(fileBytes),
+		CreatedBy:     userID,
+	})
+	if err != nil {
+		return err
 	}
 	return nil
 }

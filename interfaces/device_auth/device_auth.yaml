@@ -20,7 +20,7 @@ info:
   version: 0.1.0
 
 servers:
-  - url: https://device-auth.dev.ifc7.dev
+  - url: https://device-auth.nonprod.ifc7.dev
     description: Development device-auth (matches `deviceFlowHost` in auth package)
 
 paths:
