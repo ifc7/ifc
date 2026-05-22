@@ -24,9 +24,9 @@ import (
 )
 
 var (
-	ErrProjectExists     = fmt.Errorf("project already exists")
-	ErrInvalidRef        = fmt.Errorf("invalid reference")
-	ErrInvalidDefinition = fmt.Errorf("invalid interface definition")
+	ErrProjectExists        = fmt.Errorf("project already exists")
+	ErrInvalidRef           = fmt.Errorf("invalid reference")
+	ErrInvalidSpecification = fmt.Errorf("invalid interface specification")
 )
 
 // Project holds the state of an ifc7 managed project
@@ -200,23 +200,28 @@ type PushParams struct {
 	Name string
 }
 
-// Push pushes local changes to the remote server
-func (p *Project) Push(ctx context.Context, params PushParams) error {
+// Push pushes local changes to the remote server. It returns user-facing status messages.
+func (p *Project) Push(ctx context.Context, params PushParams) ([]string, error) {
 	if params.Name != "" {
 		for _, o := range p.config.Own {
 			if o.Ref == params.Name {
 				return p.push(ctx, o)
 			}
 		}
-		return ErrInvalidRef
+		return nil, ErrInvalidRef
 	}
+	if len(p.config.Own) == 0 {
+		return []string{"No owned interfaces to push."}, nil
+	}
+	var messages []string
 	for _, o := range p.config.Own {
-		err := p.push(ctx, o)
+		msgs, err := p.push(ctx, o)
 		if err != nil {
-			return fmt.Errorf("error committing ref %s: %w", o.Ref, err)
+			return messages, fmt.Errorf("error pushing interface %q: %w", o.Name, err)
 		}
+		messages = append(messages, msgs...)
 	}
-	return nil
+	return messages, nil
 }
 
 // -----
@@ -239,7 +244,7 @@ func (p *Project) resolveRef(ctx context.Context, ref string) (string, error) {
 		return ref, nil
 	}
 	if strings.HasPrefix(ref, "interface_") {
-		i, err := p.client.GetInterfaceWithResponse(ctx, ref, &client.GetInterfaceParams{})
+		i, err := p.client.GetInterfaceWithResponse(ctx, ref)
 		if err != nil {
 			return "", fmt.Errorf("%w: error fetching interface %s: %w", ErrInvalidRef, ref, err)
 		}
@@ -265,10 +270,13 @@ func (p *Project) resolveRefToID(ctx context.Context, ref string) (client.Interf
 		if response.StatusCode() != http.StatusOK {
 			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, response.StatusCode())
 		}
+		if response.JSON200 == nil {
+			return "", fmt.Errorf("%w: error fetching interface %s: response body is nil", ErrInvalidRef, ref)
+		}
 		return response.JSON200.Id, nil
 	}
 	if strings.HasPrefix(ref, "interface_") {
-		response, err := p.client.GetInterfaceWithResponse(ctx, ref, &client.GetInterfaceParams{})
+		response, err := p.client.GetInterfaceWithResponse(ctx, ref)
 		if err != nil {
 			return "", fmt.Errorf("%w: error fetching interface %s: %w", ErrInvalidRef, ref, err)
 		}
@@ -286,7 +294,7 @@ func (p *Project) fetch(ctx context.Context, ref string) error {
 	if err != nil {
 		return fmt.Errorf("error resolving ref %s: %w", ref, err)
 	}
-	resp, err := p.client.GetInterfaceWithResponse(ctx, id, &client.GetInterfaceParams{})
+	resp, err := p.client.GetInterfaceWithResponse(ctx, id)
 	if err != nil {
 		return fmt.Errorf("error fetching interface %s: %w", id, err)
 	}
@@ -324,7 +332,18 @@ func (p *Project) fetchRevisions(ctx context.Context, ifc client.Interface) erro
 	if resp.JSON200 == nil {
 		return fmt.Errorf("error fetching revisions: unexpected response body")
 	}
-	for _, rev := range *resp.JSON200 {
+	for _, revDescriptor := range *resp.JSON200 {
+		getResp, err := p.client.GetInterfaceRevisionWithResponse(ctx, ifc.Id, revDescriptor.Id)
+		if err != nil {
+			return fmt.Errorf("error fetching revision: %w", err)
+		}
+		if getResp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("error fetching revision: HTTP %d", resp.StatusCode())
+		}
+		if getResp.JSON200 == nil {
+			return fmt.Errorf("error fetching revisions: unexpected response body")
+		}
+		rev := *getResp.JSON200
 		err = p.manifest.upsertRevision(ifc.Id, rev)
 		if err != nil {
 			return fmt.Errorf("error adding revision to manifest: %w", err)
@@ -379,16 +398,21 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 		if err != nil {
 			return fmt.Errorf("error prompting for new interface: %w", err)
 		}
+		userID, err := p.client.CurrentUserID(ctx)
+		if err != nil {
+			return err
+		}
 		revision := client.InterfaceRevision{
-			Checksum:   sha,
-			CreatedAt:  time.Now(),
-			Definition: encoded,
-			Notes:      &newIfc.RevisionNotes,
+			Checksum:      sha,
+			CreatedAt:     time.Now(),
+			CreatedBy:     userID,
+			Specification: encoded,
+			Notes:         &newIfc.RevisionNotes,
 		}
 		p.manifest.Interfaces[id] = &ManifestInterface{
 			Interface: client.Interface{
 				Description:    &newIfc.Description,
-				LatestRevision: revision,
+				LatestRevision: &revision,
 				Name:           newIfc.Name,
 				Type:           newIfc.Type,
 				Id:             id,
@@ -400,175 +424,221 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 			Releases: map[string]*client.InterfaceRelease{},
 		}
 	} else {
-		if manifestIfc.LatestRevision.Checksum != sha {
+		if manifestIfc.LatestRevision == nil || manifestIfc.LatestRevision.Checksum != sha {
 			newRev, err := tui.PromptNewRevisionCommit(ctx)
 			if err != nil {
 				return fmt.Errorf("error prompting for new revision: %w", err)
 			}
+			userID, err := p.client.CurrentUserID(ctx)
+			if err != nil {
+				return err
+			}
 			revision := client.InterfaceRevision{
-				Checksum:   sha,
-				CreatedAt:  time.Now(),
-				Definition: encoded,
-				Id:         sha,
-				Notes:      &newRev.Notes,
+				Checksum:      sha,
+				CreatedAt:     time.Now(),
+				CreatedBy:     userID,
+				Specification: encoded,
+				Id:            sha,
+				Notes:         &newRev.Notes,
 			}
 			p.manifest.Interfaces[id].Revisions[sha] = &revision
-			p.manifest.Interfaces[id].LatestRevision = revision
+			p.manifest.Interfaces[id].LatestRevision = &revision
 		}
 	}
 	return nil
 }
 
-// push saves an interface revision or creates a new interface on the server
-func (p *Project) push(ctx context.Context, own Owned) error {
+// manifestIDForOwned returns the manifest map key for a locally owned interface.
+func (p *Project) manifestIDForOwned(ctx context.Context, own Owned) (client.InterfaceId, error) {
+	if own.Ref == "" {
+		return client.InterfaceId(own.Name), nil
+	}
+	return p.resolveRefToID(ctx, own.Ref)
+}
+
+// push saves an interface revision or creates a new interface on the server.
+func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	// for each owned interface
 	// 1. check if there is an entry checked into the manifest
 	// 2. if so, is there a ref in the owned entry?
 	//    if not, create new interface on server according to manifest and add ref to config
 	//    if so, query the interface from the server and compare it to the manifest
 	// if changes in interface, revision, or release, push these changes
+	interfaceID, err := p.manifestIDForOwned(ctx, own)
+	if err != nil {
+		return nil, err
+	}
+	manifestEntry, ok := p.manifest.Interfaces[interfaceID]
+	if !ok {
+		return []string{fmt.Sprintf("Skipping %q: no manifest entry for interface %s. Run 'ifc commit' first.", own.Name, interfaceID)}, nil
+	}
+
+	var messages []string
 	if own.Ref == "" {
 		// handle interfaces not yet saved on the server
-		manifestEntry, ok := p.manifest.Interfaces[own.Name]
-		if !ok {
-			// TODO: do we need to handle an error here?
-			return nil
+		userID, err := p.client.CurrentUserID(ctx)
+		if err != nil {
+			return nil, err
 		}
 		response, err := p.client.CreateInterfaceWithResponse(ctx, client.CreateInterfaceRequest{
-			Definition:  manifestEntry.LatestRevision.Definition,
 			Description: manifestEntry.Description,
 			Name:        manifestEntry.Name,
 			Type:        manifestEntry.Type,
+			Owner:       userID,
+			IsPublic:    true, // TODO: be able to set this
 		})
 		if err != nil {
-			return fmt.Errorf("error creating interface %s: %w", own.Name, err)
+			return nil, fmt.Errorf("error creating interface %s: %w", own.Name, err)
 		}
 		if response.StatusCode() != http.StatusCreated {
-			return fmt.Errorf("error creating interface %s: HTTP %d", own.Name, response.StatusCode())
+			return nil, fmt.Errorf("error creating interface %s: HTTP %d", own.Name, response.StatusCode())
+		}
+		if response.JSON201 == nil {
+			return nil, fmt.Errorf("error creating interface %s: unexpected response body", own.Name)
 		}
 		interfaceId := response.JSON201.Id
-		// sort revisions by create date earliest first
+		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, interfaceId))
 		revs := slices.Collect(maps.Values(manifestEntry.Revisions))
 		slices.SortStableFunc(revs, func(i, j *client.InterfaceRevision) int {
 			return i.CreatedAt.Compare(j.CreatedAt)
 		})
-		for i, rev := range revs {
-			// skipping first release because it is created automatically with interface creation
-			// TODO: revisit whether this is good behavior or not (maybe not)
-			if i == 0 {
-				continue
-			}
+		for _, rev := range revs {
 			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, interfaceId, client.CreateRevisionRequest{
-				Definition: rev.Definition,
-				Notes:      rev.Notes,
+				CreatedBy:     userID,
+				Specification: rev.Specification,
+				Notes:         rev.Notes,
 			})
 			if err != nil {
-				return fmt.Errorf("error creating revision %s: %w", rev.Id, err)
+				return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
 			}
 			if result.StatusCode() != http.StatusCreated {
-				return fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
 			}
+			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
 		for _, rel := range manifestEntry.Releases {
 			result, err := p.client.CreateInterfaceReleaseWithResponse(ctx, interfaceId, client.CreateReleaseRequest{
 				InterfaceRevisionId: rel.InterfaceRevisionId,
 				Notes:               rel.Notes,
 				SemVer:              rel.SemanticVersion,
+				Summary:             rel.Summary,
 			})
 			if err != nil {
-				return fmt.Errorf("error creating release %s: %w", rel.SemanticVersion, err)
+				return messages, fmt.Errorf("error creating release %s: %w", rel.SemanticVersion, err)
 			}
 			if result.StatusCode() != http.StatusCreated {
-				return fmt.Errorf("error creating release %s: HTTP %d", rel.SemanticVersion, result.StatusCode())
+				return messages, fmt.Errorf("error creating release %s: HTTP %d", rel.SemanticVersion, result.StatusCode())
 			}
+			messages = append(messages, fmt.Sprintf("Pushed release %s for %q.", rel.SemanticVersion, own.Name))
 		}
-	} else {
-		// handle interfaces saved on server that might need to be updated
-		manifestEntry, ok := p.manifest.Interfaces[own.Name]
-		if !ok {
-			return nil
-		}
-		id, err := p.resolveRefToID(ctx, own.Ref)
-		if err != nil {
-			return fmt.Errorf("error resolving ref %s: %w", own.Ref, err)
-		}
-		serverIfcResp, err := p.client.GetInterfaceWithResponse(ctx, id, &client.GetInterfaceParams{})
-		if err != nil {
-			return fmt.Errorf("error fetching interface %s: %w", id, err)
-		}
-		if serverIfcResp.StatusCode() != http.StatusOK {
-			return fmt.Errorf("error fetching interface %s: HTTP %d", id, serverIfcResp.StatusCode())
-		}
-		serverIfc := *serverIfcResp.JSON200
-		serverRevisionsResp, err := p.client.ListInterfaceRevisionsWithResponse(ctx, id)
-		if err != nil {
-			return fmt.Errorf("error fetching revisions: %w", err)
-		}
-		if serverRevisionsResp.StatusCode() != http.StatusOK {
-			return fmt.Errorf("error fetching revisions: HTTP %d", serverRevisionsResp.StatusCode())
-		}
-		serverRevisions := *serverRevisionsResp.JSON200
-		serverRevisionsMap := make(map[string]*client.InterfaceRevision)
-		for _, rev := range serverRevisions {
-			serverRevisionsMap[rev.Id] = &rev
-		}
-		serverReleasesResp, err := p.client.ListInterfaceReleasesWithResponse(ctx, id)
-		if err != nil {
-			return fmt.Errorf("error fetching releases: %w", err)
-		}
-		if serverReleasesResp.StatusCode() != http.StatusOK {
-			return fmt.Errorf("error fetching releases: HTTP %d", serverReleasesResp.StatusCode())
-		}
-		serverReleases := *serverReleasesResp.JSON200
-		serverReleasesMap := make(map[string]*client.InterfaceRelease)
-		for _, rel := range serverReleases {
-			serverReleasesMap[rel.SemanticVersion] = &rel
-		}
-		// compare manifest interface to server & update if necessary
-		if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
-			// TODO: add API endpoint for updating an interface
-		}
-		// find server revisions not reflected in manifest
-		var manifestMissingRevs []*client.InterfaceRevision
-		for _, rev := range serverRevisionsMap {
-			if _, ok := manifestEntry.Revisions[rev.Id]; !ok {
-				manifestMissingRevs = append(manifestMissingRevs, rev)
-			}
-		}
-		if len(manifestMissingRevs) > 0 {
-			// TODO: how to handle situation where revs haven't been fetched (sync'ed)
-			return fmt.Errorf("revisions out of sync with server %v", manifestMissingRevs)
-		}
-		var serverMissingRevs []*client.InterfaceRevision
-		for _, rev := range manifestEntry.Revisions {
-			if _, ok := serverRevisionsMap[rev.Id]; !ok {
-				serverMissingRevs = append(serverMissingRevs, rev)
-			}
-		}
-		for _, rev := range serverMissingRevs {
-			// TODO: check if revisions existing in server need updating
-			// TODO: add API endpoint for updating revisions
-			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
-				Definition: rev.Definition,
-				Notes:      rev.Notes,
-			})
-			if err != nil {
-				return fmt.Errorf("error creating revision %s: %w", rev.Id, err)
-			}
-			if result.StatusCode() != http.StatusCreated {
-				return fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
-			}
-			// TODO: manifest revision should be updated with new revision ID
-		}
-		// TODO: handle releases
+		return messages, nil
 	}
 
-	return nil
+	// handle interfaces saved on server that might need to be updated
+	id := interfaceID
+	userID, err := p.client.CurrentUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	serverIfcResp, err := p.client.GetInterfaceWithResponse(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching interface %s: %w", id, err)
+	}
+	if serverIfcResp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("error fetching interface %s: HTTP %d", id, serverIfcResp.StatusCode())
+	}
+	if serverIfcResp.JSON200 == nil {
+		return nil, fmt.Errorf("error fetching interface %s: unexpected response body", id)
+	}
+	serverIfc := *serverIfcResp.JSON200
+	serverRevisionsResp, err := p.client.ListInterfaceRevisionsWithResponse(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching revisions: %w", err)
+	}
+	if serverRevisionsResp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("error fetching revisions: HTTP %d", serverRevisionsResp.StatusCode())
+	}
+	if serverRevisionsResp.JSON200 == nil {
+		return nil, fmt.Errorf("error fetching revisions: unexpected response body")
+	}
+	serverRevisions := *serverRevisionsResp.JSON200
+	serverRevisionsMap := make(map[string]*client.InterfaceRevision)
+	for _, revDescriptor := range serverRevisions {
+		getResp, err := p.client.GetInterfaceRevisionWithResponse(ctx, id, revDescriptor.Id)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching revision: %w", err)
+		}
+		if getResp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("error fetching revision: HTTP %d", getResp.StatusCode())
+		}
+		if getResp.JSON200 == nil {
+			return nil, fmt.Errorf("error fetching revisions: unexpected response body")
+		}
+		rev := *getResp.JSON200
+		serverRevisionsMap[rev.Id] = &rev
+	}
+	serverReleasesResp, err := p.client.ListInterfaceReleasesWithResponse(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching releases: %w", err)
+	}
+	if serverReleasesResp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("error fetching releases: HTTP %d", serverReleasesResp.StatusCode())
+	}
+	if serverReleasesResp.JSON200 == nil {
+		return nil, fmt.Errorf("error fetching releases: unexpected response body")
+	}
+	serverReleases := *serverReleasesResp.JSON200
+	serverReleasesMap := make(map[string]*client.InterfaceRelease)
+	for _, rel := range serverReleases {
+		serverReleasesMap[rel.SemanticVersion] = &rel
+	}
+	_ = serverReleasesMap
+	// compare manifest interface to server & update if necessary
+	if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
+		// TODO: add API endpoint for updating an interface
+	}
+	var manifestMissingRevs []*client.InterfaceRevision
+	for _, rev := range serverRevisionsMap {
+		if _, ok := manifestEntry.Revisions[rev.Id]; !ok {
+			manifestMissingRevs = append(manifestMissingRevs, rev)
+		}
+	}
+	if len(manifestMissingRevs) > 0 {
+		return messages, fmt.Errorf("revisions out of sync with server %v", manifestMissingRevs)
+	}
+	var serverMissingRevs []*client.InterfaceRevision
+	for _, rev := range manifestEntry.Revisions {
+		if _, ok := serverRevisionsMap[rev.Id]; !ok {
+			serverMissingRevs = append(serverMissingRevs, rev)
+		}
+	}
+	for _, rev := range serverMissingRevs {
+		// TODO: check if revisions existing in server need updating
+		// TODO: add API endpoint for updating revisions
+		result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
+			CreatedBy:     userID,
+			Specification: rev.Specification,
+			Notes:         rev.Notes,
+		})
+		if err != nil {
+			return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
+		}
+		if result.StatusCode() != http.StatusCreated {
+			return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+		}
+		messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
+		// TODO: manifest revision should be updated with new revision ID
+	}
+	// TODO: handle releases
+	if len(messages) == 0 {
+		messages = append(messages, fmt.Sprintf("Interface %q is up to date.", own.Name))
+	}
+	return messages, nil
 }
 
 // splitRef splits an interface reference into its scope, owner, and name components
 func splitRef(ref string) (scope string, owner string, name string, err error) {
-	prefix := "dev.ifc7.dev/api/v0/ifc/"
+	prefix := internal.DefaultAPIHost + "/api/v0/i/"
 	rem, ok := strings.CutPrefix(ref, prefix)
 	if !ok {
 		return "", "", "", fmt.Errorf("invalid ref %s: missing prefix %s", ref, prefix)
@@ -604,5 +674,5 @@ func getExt(b []byte) (string, error) {
 	if yaml.Unmarshal(b, &i) == nil {
 		return ".yaml", nil
 	}
-	return "", ErrInvalidDefinition
+	return "", ErrInvalidSpecification
 }

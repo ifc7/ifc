@@ -17,12 +17,6 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for DatabaseConnectivityStatus.
-const (
-	Connected    DatabaseConnectivityStatus = "connected"
-	Disconnected DatabaseConnectivityStatus = "disconnected"
-)
-
 // Defines values for InterfaceType.
 const (
 	JSONSCHEMA InterfaceType = "JSON_SCHEMA"
@@ -34,6 +28,12 @@ const (
 	Admin  OrganizationRole = "admin"
 	Editor OrganizationRole = "editor"
 	Viewer OrganizationRole = "viewer"
+)
+
+// Defines values for SpecificationFileFormat.
+const (
+	Json SpecificationFileFormat = "json"
+	Yaml SpecificationFileFormat = "yaml"
 )
 
 // Defines values for Format.
@@ -50,14 +50,8 @@ const (
 
 // Defines values for GetInterfaceByPathParamsOwnerScope.
 const (
-	Orgs  GetInterfaceByPathParamsOwnerScope = "orgs"
-	Users GetInterfaceByPathParamsOwnerScope = "users"
-)
-
-// Defines values for GetInterfaceParamsFormat.
-const (
-	Html GetInterfaceParamsFormat = "html"
-	Raw  GetInterfaceParamsFormat = "raw"
+	O GetInterfaceByPathParamsOwnerScope = "o"
+	U GetInterfaceByPathParamsOwnerScope = "u"
 )
 
 // AddOrganizationMemberRequest Properties for adding a user to an organization
@@ -71,21 +65,27 @@ type AddOrganizationMemberRequest struct {
 
 // CreateInterfaceRequest Properties that describe a new interface to be created
 type CreateInterfaceRequest struct {
-	// Definition base64-encoded interface definition
-	Definition InterfaceDefinition `json:"definition"`
-
 	// Description A brief description of the interface
 	Description *string `json:"description,omitempty"`
+
+	// IsPublic Whether the interface is publicly accessible (default False)
+	IsPublic bool `json:"isPublic"`
 
 	// Name A short, human-readable name for the interface
 	Name string `json:"name"`
 
-	// Type Defines the type of interface definition being used
+	// Owner either a UserId or OrganizationId
+	Owner InterfaceOwner `json:"owner"`
+
+	// Type Defines the type of interface specification being used
 	Type InterfaceType `json:"type"`
 }
 
 // CreateOrganizationRequest Properties for creating a new organization
 type CreateOrganizationRequest struct {
+	// ExternalId External identifier for the organization, if applicable
+	ExternalId *string `json:"externalId,omitempty"`
+
 	// Name Display name for the organization (case-insensitive uniqueness)
 	Name string `json:"name"`
 }
@@ -100,28 +100,22 @@ type CreateReleaseRequest struct {
 
 	// SemVer Semantic versioning number (https://semver.org/)
 	SemVer SemanticVersion `json:"semVer"`
+
+	// Summary A brief summary of the release
+	Summary string `json:"summary"`
 }
 
 // CreateRevisionRequest Properties that describe a new interface revision to be created
 type CreateRevisionRequest struct {
-	// Definition base64-encoded interface definition
-	Definition InterfaceDefinition `json:"definition"`
+	// CreatedBy TypeID for the user
+	CreatedBy UserId `json:"createdBy"`
 
 	// Notes A brief description of the changes made in this revision
 	Notes *string `json:"notes,omitempty"`
+
+	// Specification base64-encoded interface specification
+	Specification InterfaceSpecification `json:"specification"`
 }
-
-// DatabaseConnectivity Database connectivity status
-type DatabaseConnectivity struct {
-	// Error An error message if the database connection failed
-	Error *string `json:"error,omitempty"`
-
-	// Status The status of the database connection
-	Status DatabaseConnectivityStatus `json:"status"`
-}
-
-// DatabaseConnectivityStatus The status of the database connection
-type DatabaseConnectivityStatus string
 
 // Error Error response
 type Error struct {
@@ -132,58 +126,85 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// Health Application health status and metrics
-type Health struct {
-	// BuildTime Build time (UTC ISO-8601)
-	BuildTime time.Time `json:"buildTime"`
-
-	// Database Database connectivity status
-	Database DatabaseConnectivity `json:"database"`
-
-	// GitCommit Git commit hash
-	GitCommit string `json:"gitCommit"`
-
-	// GoVersion Go runtime version
-	GoVersion string `json:"goVersion"`
-
-	// Goroutines Number of goroutines
-	Goroutines int `json:"goroutines"`
-
-	// Memory Memory statistics
-	Memory MemoryStats `json:"memory"`
-
-	// UptimeSeconds Uptime in seconds
-	UptimeSeconds int64 `json:"uptimeSeconds"`
-
-	// Version Application version
-	Version string `json:"version"`
-}
-
-// Interface A definition for a particular interface
+// Interface A specification for a particular interface
 type Interface struct {
+	// CreatedAt The time the interface was created
+	CreatedAt time.Time `json:"createdAt"`
+
 	// Description A brief description of the interface
 	Description *string `json:"description,omitempty"`
 
 	// Id TypeID for the interface
 	Id InterfaceId `json:"id"`
 
+	// IsPublic Whether the interface is publicly accessible
+	IsPublic bool `json:"isPublic"`
+
+	// LatestRelease Describes a particular versioned release of an interface
+	LatestRelease *InterfaceRelease `json:"latestRelease,omitempty"`
+
 	// LatestRevision Describes a particular revision of an interface
-	LatestRevision InterfaceRevision `json:"latestRevision"`
+	LatestRevision *InterfaceRevision `json:"latestRevision,omitempty"`
 
 	// Name A short, human-readable name for the interface
 	Name string `json:"name"`
 
-	// Type Defines the type of interface definition being used
+	// Owner either a UserId or OrganizationId
+	Owner InterfaceOwner `json:"owner"`
+
+	// Slug A URL-friendly version of the interface name
+	Slug string `json:"slug"`
+
+	// Type Defines the type of interface specification being used
 	Type InterfaceType `json:"type"`
+
+	// UpdatedAt The time of the last update to the interface (including revisions or releases)
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// InterfaceDefinition base64-encoded interface definition
-type InterfaceDefinition = string
+// InterfaceDescriptor A lightweight descriptor for a particular interface, does not include the full revision specification
+type InterfaceDescriptor struct {
+	// CreatedAt The time the interface was created
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Description A brief description of the interface
+	Description *string `json:"description,omitempty"`
+
+	// Id TypeID for the interface
+	Id InterfaceId `json:"id"`
+
+	// IsPublic Whether the interface is publicly accessible
+	IsPublic bool `json:"isPublic"`
+
+	// LatestReleaseVersion Semantic versioning number (https://semver.org/)
+	LatestReleaseVersion *SemanticVersion `json:"latestReleaseVersion,omitempty"`
+
+	// LatestRevisionId TypeID for the interface revision
+	LatestRevisionId *InterfaceRevisionId `json:"latestRevisionId,omitempty"`
+
+	// Name A short, human-readable name for the interface
+	Name string `json:"name"`
+
+	// Owner either a UserId or OrganizationId
+	Owner InterfaceOwner `json:"owner"`
+
+	// Slug A URL-friendly version of the interface name
+	Slug string `json:"slug"`
+
+	// Type Defines the type of interface specification being used
+	Type InterfaceType `json:"type"`
+
+	// UpdatedAt The time of the last update to the interface (including revisions or releases)
+	UpdatedAt time.Time `json:"updatedAt"`
+}
 
 // InterfaceId TypeID for the interface
 type InterfaceId = string
 
-// InterfaceRelease Describes a particular versionedrelease of an interface
+// InterfaceOwner either a UserId or OrganizationId
+type InterfaceOwner = string
+
+// InterfaceRelease Describes a particular versioned release of an interface
 type InterfaceRelease struct {
 	// CreatedAt The time the release was created
 	CreatedAt time.Time `json:"createdAt"`
@@ -194,23 +215,53 @@ type InterfaceRelease struct {
 	// InterfaceRevisionId TypeID for the interface revision
 	InterfaceRevisionId InterfaceRevisionId `json:"interfaceRevisionId"`
 
-	// Notes A brief description of the release
+	// Notes A detailed set of release notes describing the changes in this release
 	Notes *string `json:"notes,omitempty"`
 
 	// SemanticVersion Semantic versioning number (https://semver.org/)
 	SemanticVersion SemanticVersion `json:"semanticVersion"`
+
+	// Summary A brief summary of the release
+	Summary string `json:"summary"`
 }
 
 // InterfaceRevision Describes a particular revision of an interface
 type InterfaceRevision struct {
-	// Checksum SHA-256 checksum of the raw interface definition
+	// Checksum SHA-256 checksum of the raw interface specification
 	Checksum string `json:"checksum"`
 
 	// CreatedAt The time the revision was created
 	CreatedAt time.Time `json:"createdAt"`
 
-	// Definition base64-encoded interface definition
-	Definition InterfaceDefinition `json:"definition"`
+	// CreatedBy TypeID for the user
+	CreatedBy UserId `json:"createdBy"`
+
+	// FileFormat The file format of the interface specification file
+	FileFormat *SpecificationFileFormat `json:"fileFormat,omitempty"`
+
+	// Id TypeID for the interface revision
+	Id InterfaceRevisionId `json:"id"`
+
+	// Notes A brief description of the changes made in this revision
+	Notes *string `json:"notes,omitempty"`
+
+	// Specification base64-encoded interface specification
+	Specification InterfaceSpecification `json:"specification"`
+}
+
+// InterfaceRevisionDescriptor A lightweight descriptor of a revision, does not include the specification
+type InterfaceRevisionDescriptor struct {
+	// Checksum SHA-256 checksum of the raw interface specification
+	Checksum string `json:"checksum"`
+
+	// CreatedAt The time the revision was created
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy TypeID for the user
+	CreatedBy UserId `json:"createdBy"`
+
+	// FileFormat The file format of the interface specification file
+	FileFormat *SpecificationFileFormat `json:"fileFormat,omitempty"`
 
 	// Id TypeID for the interface revision
 	Id InterfaceRevisionId `json:"id"`
@@ -222,22 +273,19 @@ type InterfaceRevision struct {
 // InterfaceRevisionId TypeID for the interface revision
 type InterfaceRevisionId = string
 
-// InterfaceType Defines the type of interface definition being used
-type InterfaceType string
+// InterfaceSpecification base64-encoded interface specification
+type InterfaceSpecification = string
 
-// MemoryStats Memory statistics
-type MemoryStats struct {
-	AllocBytes     *uint64 `json:"allocBytes,omitempty"`
-	GcCycles       *uint32 `json:"gcCycles,omitempty"`
-	HeapAllocBytes *uint64 `json:"heapAllocBytes,omitempty"`
-	SysBytes       *uint64 `json:"sysBytes,omitempty"`
-}
+// InterfaceType Defines the type of interface specification being used
+type InterfaceType string
 
 // Organization A user's organization
 type Organization struct {
 	// Id TypeID for the organization
-	Id   OrganizationId `json:"id"`
-	Name string         `json:"name"`
+	Id       OrganizationId         `json:"id"`
+	Name     string                 `json:"name"`
+	Settings map[string]interface{} `json:"settings"`
+	Slug     string                 `json:"slug"`
 }
 
 // OrganizationId TypeID for the organization
@@ -264,13 +312,41 @@ type OrganizationRole string
 // SemanticVersion Semantic versioning number (https://semver.org/)
 type SemanticVersion = string
 
-// SettingsPatch Partial settings object; top-level keys are merged into existing settings
-type SettingsPatch map[string]interface{}
+// SpecificationFileFormat The file format of the interface specification file
+type SpecificationFileFormat string
+
+// UpdateInterfaceRequest Properties for updating an existing interface
+type UpdateInterfaceRequest struct {
+	Description *string `json:"description,omitempty"`
+	IsPublic    *bool   `json:"isPublic,omitempty"`
+	Name        *string `json:"name,omitempty"`
+}
 
 // UpdateOrganizationMemberRequest Properties for updating an existing membership
 type UpdateOrganizationMemberRequest struct {
 	// Role Role of the user within the organization; determines permissions on org-scoped resources
 	Role OrganizationRole `json:"role"`
+}
+
+// UpdateOrganizationRequest Properties for updating an existing organization
+type UpdateOrganizationRequest struct {
+	Settings *map[string]interface{} `json:"settings,omitempty"`
+}
+
+// UpdateUserRequest Properties for updating an existing user
+type UpdateUserRequest struct {
+	Settings map[string]interface{} `json:"settings"`
+}
+
+// User A user of the system
+type User struct {
+	// Id TypeID for the user
+	Id       UserId                 `json:"id"`
+	Name     string                 `json:"name"`
+	Settings map[string]interface{} `json:"settings"`
+
+	// Slug A URL-friendly version of the user name
+	Slug string `json:"slug"`
 }
 
 // UserId TypeID for the user
@@ -288,12 +364,15 @@ type ConflictError = Error
 // ForbiddenError Error response
 type ForbiddenError = Error
 
+// NotFoundError Error response
+type NotFoundError = Error
+
 // UnauthorizedError Error response
 type UnauthorizedError = Error
 
 // GetInterfaceByPathParams defines parameters for GetInterfaceByPath.
 type GetInterfaceByPathParams struct {
-	// Format Response format. When omitted, returns the interface descriptor as JSON. Use `raw` for the raw interface definition, or `html` for HTML documentation.
+	// Format Response format. When omitted, returns the interface descriptor as JSON. Use `raw` for the raw interface specification, or `html` for HTML documentation.
 	Format *GetInterfaceByPathParamsFormat `form:"format,omitempty" json:"format,omitempty"`
 }
 
@@ -303,17 +382,17 @@ type GetInterfaceByPathParamsFormat string
 // GetInterfaceByPathParamsOwnerScope defines parameters for GetInterfaceByPath.
 type GetInterfaceByPathParamsOwnerScope string
 
-// GetInterfaceParams defines parameters for GetInterface.
-type GetInterfaceParams struct {
-	// Format Response format. When omitted, returns the interface descriptor as JSON. Use `raw` for the raw interface definition, or `html` for HTML documentation.
-	Format *GetInterfaceParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+// ListInterfacesParams defines parameters for ListInterfaces.
+type ListInterfacesParams struct {
+	// Owner If provided, filters interfaces by the specified owner (user or organization)
+	Owner *InterfaceOwner `form:"owner,omitempty" json:"owner,omitempty"`
 }
-
-// GetInterfaceParamsFormat defines parameters for GetInterface.
-type GetInterfaceParamsFormat string
 
 // CreateInterfaceJSONRequestBody defines body for CreateInterface for application/json ContentType.
 type CreateInterfaceJSONRequestBody = CreateInterfaceRequest
+
+// UpdateInterfaceJSONRequestBody defines body for UpdateInterface for application/json ContentType.
+type UpdateInterfaceJSONRequestBody = UpdateInterfaceRequest
 
 // CreateInterfaceReleaseJSONRequestBody defines body for CreateInterfaceRelease for application/json ContentType.
 type CreateInterfaceReleaseJSONRequestBody = CreateReleaseRequest
@@ -324,17 +403,17 @@ type CreateInterfaceRevisionJSONRequestBody = CreateRevisionRequest
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = CreateOrganizationRequest
 
+// UpdateOrganizationJSONRequestBody defines body for UpdateOrganization for application/json ContentType.
+type UpdateOrganizationJSONRequestBody = UpdateOrganizationRequest
+
 // AddOrganizationMemberJSONRequestBody defines body for AddOrganizationMember for application/json ContentType.
 type AddOrganizationMemberJSONRequestBody = AddOrganizationMemberRequest
 
 // UpdateOrganizationMemberJSONRequestBody defines body for UpdateOrganizationMember for application/json ContentType.
 type UpdateOrganizationMemberJSONRequestBody = UpdateOrganizationMemberRequest
 
-// UpdateOrganizationSettingsJSONRequestBody defines body for UpdateOrganizationSettings for application/json ContentType.
-type UpdateOrganizationSettingsJSONRequestBody = SettingsPatch
-
-// UpdateUserSettingsJSONRequestBody defines body for UpdateUserSettings for application/json ContentType.
-type UpdateUserSettingsJSONRequestBody = SettingsPatch
+// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
+type UpdateUserJSONRequestBody = UpdateUserRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -409,14 +488,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetHealth request
-	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetInterfaceByPath request
 	GetInterfaceByPath(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListInterfaces request
-	ListInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListInterfaces(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateInterfaceWithBody request with any body
 	CreateInterfaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -427,7 +503,12 @@ type ClientInterface interface {
 	DeleteInterface(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInterface request
-	GetInterface(ctx context.Context, interfaceId InterfaceId, params *GetInterfaceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetInterface(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateInterfaceWithBody request with any body
+	UpdateInterfaceWithBody(ctx context.Context, interfaceId InterfaceId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateInterface(ctx context.Context, interfaceId InterfaceId, body UpdateInterfaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListInterfaceReleases request
 	ListInterfaceReleases(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -462,6 +543,14 @@ type ClientInterface interface {
 
 	CreateOrganization(ctx context.Context, body CreateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetOrganization request
+	GetOrganization(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateOrganizationWithBody request with any body
+	UpdateOrganizationWithBody(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateOrganization(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListOrganizationMembers request
 	ListOrganizationMembers(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -481,33 +570,16 @@ type ClientInterface interface {
 
 	UpdateOrganizationMember(ctx context.Context, organizationId OrganizationId, userId UserId, body UpdateOrganizationMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetOrganizationSettings request
-	GetOrganizationSettings(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetCurrentUser request
+	GetCurrentUser(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateOrganizationSettingsWithBody request with any body
-	UpdateOrganizationSettingsWithBody(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetUser request
+	GetUser(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateOrganizationSettings(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// UpdateUserWithBody request with any body
+	UpdateUserWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetUserSettings request
-	GetUserSettings(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpdateUserSettingsWithBody request with any body
-	UpdateUserSettingsWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	UpdateUserSettings(ctx context.Context, userId UserId, body UpdateUserSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-}
-
-func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHealthRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
+	UpdateUser(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetInterfaceByPath(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -522,8 +594,8 @@ func (c *Client) GetInterfaceByPath(ctx context.Context, ownerScope GetInterface
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListInterfacesRequest(c.Server)
+func (c *Client) ListInterfaces(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListInterfacesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -570,8 +642,32 @@ func (c *Client) DeleteInterface(ctx context.Context, interfaceId InterfaceId, r
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetInterface(ctx context.Context, interfaceId InterfaceId, params *GetInterfaceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetInterfaceRequest(c.Server, interfaceId, params)
+func (c *Client) GetInterface(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetInterfaceRequest(c.Server, interfaceId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateInterfaceWithBody(ctx context.Context, interfaceId InterfaceId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateInterfaceRequestWithBody(c.Server, interfaceId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateInterface(ctx context.Context, interfaceId InterfaceId, body UpdateInterfaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateInterfaceRequest(c.Server, interfaceId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -726,6 +822,42 @@ func (c *Client) CreateOrganization(ctx context.Context, body CreateOrganization
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetOrganization(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOrganizationRequest(c.Server, organizationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateOrganizationWithBody(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateOrganizationRequestWithBody(c.Server, organizationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateOrganization(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateOrganizationRequest(c.Server, organizationId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListOrganizationMembers(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListOrganizationMembersRequest(c.Server, organizationId)
 	if err != nil {
@@ -810,8 +942,8 @@ func (c *Client) UpdateOrganizationMember(ctx context.Context, organizationId Or
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetOrganizationSettings(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOrganizationSettingsRequest(c.Server, organizationId)
+func (c *Client) GetCurrentUser(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCurrentUserRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -822,8 +954,8 @@ func (c *Client) GetOrganizationSettings(ctx context.Context, organizationId Org
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateOrganizationSettingsWithBody(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateOrganizationSettingsRequestWithBody(c.Server, organizationId, contentType, body)
+func (c *Client) GetUser(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetUserRequest(c.Server, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -834,8 +966,8 @@ func (c *Client) UpdateOrganizationSettingsWithBody(ctx context.Context, organiz
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateOrganizationSettings(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateOrganizationSettingsRequest(c.Server, organizationId, body)
+func (c *Client) UpdateUserWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequestWithBody(c.Server, userId, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -846,8 +978,8 @@ func (c *Client) UpdateOrganizationSettings(ctx context.Context, organizationId 
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetUserSettings(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetUserSettingsRequest(c.Server, userId)
+func (c *Client) UpdateUser(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequest(c.Server, userId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -856,57 +988,6 @@ func (c *Client) GetUserSettings(ctx context.Context, userId UserId, reqEditors 
 		return nil, err
 	}
 	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateUserSettingsWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateUserSettingsRequestWithBody(c.Server, userId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateUserSettings(ctx context.Context, userId UserId, body UpdateUserSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateUserSettingsRequest(c.Server, userId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// NewGetHealthRequest generates requests for GetHealth
-func NewGetHealthRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/health")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
 }
 
 // NewGetInterfaceByPathRequest generates requests for GetInterfaceByPath
@@ -939,7 +1020,7 @@ func NewGetInterfaceByPathRequest(server string, ownerScope GetInterfaceByPathPa
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/ifc/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	operationPath := fmt.Sprintf("/i/%s/%s/%s", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -980,7 +1061,7 @@ func NewGetInterfaceByPathRequest(server string, ownerScope GetInterfaceByPathPa
 }
 
 // NewListInterfacesRequest generates requests for ListInterfaces
-func NewListInterfacesRequest(server string) (*http.Request, error) {
+func NewListInterfacesRequest(server string, params *ListInterfacesParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -996,6 +1077,28 @@ func NewListInterfacesRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Owner != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "owner", runtime.ParamLocationQuery, *params.Owner); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -1081,7 +1184,7 @@ func NewDeleteInterfaceRequest(server string, interfaceId InterfaceId) (*http.Re
 }
 
 // NewGetInterfaceRequest generates requests for GetInterface
-func NewGetInterfaceRequest(server string, interfaceId InterfaceId, params *GetInterfaceParams) (*http.Request, error) {
+func NewGetInterfaceRequest(server string, interfaceId InterfaceId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1106,32 +1209,57 @@ func NewGetInterfaceRequest(server string, interfaceId InterfaceId, params *GetI
 		return nil, err
 	}
 
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Format != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "format", runtime.ParamLocationQuery, *params.Format); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewUpdateInterfaceRequest calls the generic UpdateInterface builder with application/json body
+func NewUpdateInterfaceRequest(server string, interfaceId InterfaceId, body UpdateInterfaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateInterfaceRequestWithBody(server, interfaceId, "application/json", bodyReader)
+}
+
+// NewUpdateInterfaceRequestWithBody generates requests for UpdateInterface with any type of body
+func NewUpdateInterfaceRequestWithBody(server string, interfaceId InterfaceId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "interfaceId", runtime.ParamLocationPath, interfaceId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/interfaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -1488,6 +1616,87 @@ func NewCreateOrganizationRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
+// NewGetOrganizationRequest generates requests for GetOrganization
+func NewGetOrganizationRequest(server string, organizationId OrganizationId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/organizations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateOrganizationRequest calls the generic UpdateOrganization builder with application/json body
+func NewUpdateOrganizationRequest(server string, organizationId OrganizationId, body UpdateOrganizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateOrganizationRequestWithBody(server, organizationId, "application/json", bodyReader)
+}
+
+// NewUpdateOrganizationRequestWithBody generates requests for UpdateOrganization with any type of body
+func NewUpdateOrganizationRequestWithBody(server string, organizationId OrganizationId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/organizations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListOrganizationMembersRequest generates requests for ListOrganizationMembers
 func NewListOrganizationMembersRequest(server string, organizationId OrganizationId) (*http.Request, error) {
 	var err error
@@ -1705,23 +1914,16 @@ func NewUpdateOrganizationMemberRequestWithBody(server string, organizationId Or
 	return req, nil
 }
 
-// NewGetOrganizationSettingsRequest generates requests for GetOrganizationSettings
-func NewGetOrganizationSettingsRequest(server string, organizationId OrganizationId) (*http.Request, error) {
+// NewGetCurrentUserRequest generates requests for GetCurrentUser
+func NewGetCurrentUserRequest(server string) (*http.Request, error) {
 	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
-	if err != nil {
-		return nil, err
-	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/organizations/%s/settings", pathParam0)
+	operationPath := fmt.Sprintf("/users/current")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1739,55 +1941,8 @@ func NewGetOrganizationSettingsRequest(server string, organizationId Organizatio
 	return req, nil
 }
 
-// NewUpdateOrganizationSettingsRequest calls the generic UpdateOrganizationSettings builder with application/json body
-func NewUpdateOrganizationSettingsRequest(server string, organizationId OrganizationId, body UpdateOrganizationSettingsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUpdateOrganizationSettingsRequestWithBody(server, organizationId, "application/json", bodyReader)
-}
-
-// NewUpdateOrganizationSettingsRequestWithBody generates requests for UpdateOrganizationSettings with any type of body
-func NewUpdateOrganizationSettingsRequestWithBody(server string, organizationId OrganizationId, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationId", runtime.ParamLocationPath, organizationId)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/organizations/%s/settings", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("PATCH", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetUserSettingsRequest generates requests for GetUserSettings
-func NewGetUserSettingsRequest(server string, userId UserId) (*http.Request, error) {
+// NewGetUserRequest generates requests for GetUser
+func NewGetUserRequest(server string, userId UserId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1802,7 +1957,7 @@ func NewGetUserSettingsRequest(server string, userId UserId) (*http.Request, err
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/users/%s/settings", pathParam0)
+	operationPath := fmt.Sprintf("/users/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1820,19 +1975,19 @@ func NewGetUserSettingsRequest(server string, userId UserId) (*http.Request, err
 	return req, nil
 }
 
-// NewUpdateUserSettingsRequest calls the generic UpdateUserSettings builder with application/json body
-func NewUpdateUserSettingsRequest(server string, userId UserId, body UpdateUserSettingsJSONRequestBody) (*http.Request, error) {
+// NewUpdateUserRequest calls the generic UpdateUser builder with application/json body
+func NewUpdateUserRequest(server string, userId UserId, body UpdateUserJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewUpdateUserSettingsRequestWithBody(server, userId, "application/json", bodyReader)
+	return NewUpdateUserRequestWithBody(server, userId, "application/json", bodyReader)
 }
 
-// NewUpdateUserSettingsRequestWithBody generates requests for UpdateUserSettings with any type of body
-func NewUpdateUserSettingsRequestWithBody(server string, userId UserId, contentType string, body io.Reader) (*http.Request, error) {
+// NewUpdateUserRequestWithBody generates requests for UpdateUser with any type of body
+func NewUpdateUserRequestWithBody(server string, userId UserId, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1847,7 +2002,7 @@ func NewUpdateUserSettingsRequestWithBody(server string, userId UserId, contentT
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/users/%s/settings", pathParam0)
+	operationPath := fmt.Sprintf("/users/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1910,14 +2065,11 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetHealthWithResponse request
-	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
-
 	// GetInterfaceByPathWithResponse request
 	GetInterfaceByPathWithResponse(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*GetInterfaceByPathResponse, error)
 
 	// ListInterfacesWithResponse request
-	ListInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error)
+	ListInterfacesWithResponse(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error)
 
 	// CreateInterfaceWithBodyWithResponse request with any body
 	CreateInterfaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInterfaceResponse, error)
@@ -1928,7 +2080,12 @@ type ClientWithResponsesInterface interface {
 	DeleteInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*DeleteInterfaceResponse, error)
 
 	// GetInterfaceWithResponse request
-	GetInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, params *GetInterfaceParams, reqEditors ...RequestEditorFn) (*GetInterfaceResponse, error)
+	GetInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*GetInterfaceResponse, error)
+
+	// UpdateInterfaceWithBodyWithResponse request with any body
+	UpdateInterfaceWithBodyWithResponse(ctx context.Context, interfaceId InterfaceId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateInterfaceResponse, error)
+
+	UpdateInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, body UpdateInterfaceJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateInterfaceResponse, error)
 
 	// ListInterfaceReleasesWithResponse request
 	ListInterfaceReleasesWithResponse(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*ListInterfaceReleasesResponse, error)
@@ -1963,6 +2120,14 @@ type ClientWithResponsesInterface interface {
 
 	CreateOrganizationWithResponse(ctx context.Context, body CreateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOrganizationResponse, error)
 
+	// GetOrganizationWithResponse request
+	GetOrganizationWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error)
+
+	// UpdateOrganizationWithBodyWithResponse request with any body
+	UpdateOrganizationWithBodyWithResponse(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error)
+
+	UpdateOrganizationWithResponse(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error)
+
 	// ListOrganizationMembersWithResponse request
 	ListOrganizationMembersWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*ListOrganizationMembersResponse, error)
 
@@ -1982,43 +2147,16 @@ type ClientWithResponsesInterface interface {
 
 	UpdateOrganizationMemberWithResponse(ctx context.Context, organizationId OrganizationId, userId UserId, body UpdateOrganizationMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationMemberResponse, error)
 
-	// GetOrganizationSettingsWithResponse request
-	GetOrganizationSettingsWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*GetOrganizationSettingsResponse, error)
+	// GetCurrentUserWithResponse request
+	GetCurrentUserWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentUserResponse, error)
 
-	// UpdateOrganizationSettingsWithBodyWithResponse request with any body
-	UpdateOrganizationSettingsWithBodyWithResponse(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationSettingsResponse, error)
+	// GetUserWithResponse request
+	GetUserWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*GetUserResponse, error)
 
-	UpdateOrganizationSettingsWithResponse(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationSettingsResponse, error)
+	// UpdateUserWithBodyWithResponse request with any body
+	UpdateUserWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
 
-	// GetUserSettingsWithResponse request
-	GetUserSettingsWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*GetUserSettingsResponse, error)
-
-	// UpdateUserSettingsWithBodyWithResponse request with any body
-	UpdateUserSettingsWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserSettingsResponse, error)
-
-	UpdateUserSettingsWithResponse(ctx context.Context, userId UserId, body UpdateUserSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserSettingsResponse, error)
-}
-
-type GetHealthResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *Health
-}
-
-// Status returns HTTPResponse.Status
-func (r GetHealthResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetHealthResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
+	UpdateUserWithResponse(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
 }
 
 type GetInterfaceByPathResponse struct {
@@ -2028,7 +2166,7 @@ type GetInterfaceByPathResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2050,7 +2188,8 @@ func (r GetInterfaceByPathResponse) StatusCode() int {
 type ListInterfacesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Interface
+	JSON200      *[]InterfaceDescriptor
+	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
 }
@@ -2074,7 +2213,7 @@ func (r ListInterfacesResponse) StatusCode() int {
 type CreateInterfaceResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *Interface
+	JSON201      *InterfaceDescriptor
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
@@ -2103,7 +2242,7 @@ type DeleteInterfaceResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2129,7 +2268,7 @@ type GetInterfaceResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2148,6 +2287,32 @@ func (r GetInterfaceResponse) StatusCode() int {
 	return 0
 }
 
+type UpdateInterfaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *InterfaceDescriptor
+	JSON400      *BadRequestError
+	JSON401      *UnauthorizedError
+	JSON403      *ForbiddenError
+	JSON404      *NotFoundError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateInterfaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateInterfaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListInterfaceReleasesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2155,7 +2320,7 @@ type ListInterfaceReleasesResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2181,7 +2346,7 @@ type CreateInterfaceReleaseResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2206,7 +2371,7 @@ type DeleteInterfaceReleaseResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2232,7 +2397,7 @@ type GetInterfaceReleaseResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2254,11 +2419,11 @@ func (r GetInterfaceReleaseResponse) StatusCode() int {
 type ListInterfaceRevisionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]InterfaceRevision
+	JSON200      *[]InterfaceRevisionDescriptor
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2280,11 +2445,11 @@ func (r ListInterfaceRevisionsResponse) StatusCode() int {
 type CreateInterfaceRevisionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *InterfaceRevision
+	JSON201      *InterfaceRevisionDescriptor
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2310,7 +2475,7 @@ type GetInterfaceRevisionResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2380,6 +2545,58 @@ func (r CreateOrganizationResponse) StatusCode() int {
 	return 0
 }
 
+type GetOrganizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *Organization
+	JSON400      *BadRequestError
+	JSON401      *UnauthorizedError
+	JSON403      *ForbiddenError
+	JSON404      *NotFoundError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOrganizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOrganizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateOrganizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *Organization
+	JSON400      *BadRequestError
+	JSON401      *UnauthorizedError
+	JSON403      *ForbiddenError
+	JSON404      *NotFoundError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateOrganizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateOrganizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListOrganizationMembersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2387,7 +2604,7 @@ type ListOrganizationMembersResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2413,7 +2630,7 @@ type AddOrganizationMemberResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2464,7 +2681,7 @@ type GetOrganizationMemberResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2490,7 +2707,7 @@ type UpdateOrganizationMemberResponse struct {
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
@@ -2509,18 +2726,16 @@ func (r UpdateOrganizationMemberResponse) StatusCode() int {
 	return 0
 }
 
-type GetOrganizationSettingsResponse struct {
+type GetCurrentUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
-	JSON400      *BadRequestError
+	JSON200      *User
 	JSON401      *UnauthorizedError
-	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
-func (r GetOrganizationSettingsResponse) Status() string {
+func (r GetCurrentUserResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2528,25 +2743,25 @@ func (r GetOrganizationSettingsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetOrganizationSettingsResponse) StatusCode() int {
+func (r GetCurrentUserResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type UpdateOrganizationSettingsResponse struct {
+type GetUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *User
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
-func (r UpdateOrganizationSettingsResponse) Status() string {
+func (r GetUserResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2554,25 +2769,25 @@ func (r UpdateOrganizationSettingsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r UpdateOrganizationSettingsResponse) StatusCode() int {
+func (r GetUserResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetUserSettingsResponse struct {
+type UpdateUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *User
 	JSON400      *BadRequestError
 	JSON401      *UnauthorizedError
 	JSON403      *ForbiddenError
-	JSON404      *Error
+	JSON404      *NotFoundError
 }
 
 // Status returns HTTPResponse.Status
-func (r GetUserSettingsResponse) Status() string {
+func (r UpdateUserResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2580,46 +2795,11 @@ func (r GetUserSettingsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetUserSettingsResponse) StatusCode() int {
+func (r UpdateUserResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
-}
-
-type UpdateUserSettingsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
-	JSON400      *BadRequestError
-	JSON401      *UnauthorizedError
-	JSON403      *ForbiddenError
-	JSON404      *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r UpdateUserSettingsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UpdateUserSettingsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// GetHealthWithResponse request returning *GetHealthResponse
-func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error) {
-	rsp, err := c.GetHealth(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetHealthResponse(rsp)
 }
 
 // GetInterfaceByPathWithResponse request returning *GetInterfaceByPathResponse
@@ -2632,8 +2812,8 @@ func (c *ClientWithResponses) GetInterfaceByPathWithResponse(ctx context.Context
 }
 
 // ListInterfacesWithResponse request returning *ListInterfacesResponse
-func (c *ClientWithResponses) ListInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error) {
-	rsp, err := c.ListInterfaces(ctx, reqEditors...)
+func (c *ClientWithResponses) ListInterfacesWithResponse(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error) {
+	rsp, err := c.ListInterfaces(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -2667,12 +2847,29 @@ func (c *ClientWithResponses) DeleteInterfaceWithResponse(ctx context.Context, i
 }
 
 // GetInterfaceWithResponse request returning *GetInterfaceResponse
-func (c *ClientWithResponses) GetInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, params *GetInterfaceParams, reqEditors ...RequestEditorFn) (*GetInterfaceResponse, error) {
-	rsp, err := c.GetInterface(ctx, interfaceId, params, reqEditors...)
+func (c *ClientWithResponses) GetInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, reqEditors ...RequestEditorFn) (*GetInterfaceResponse, error) {
+	rsp, err := c.GetInterface(ctx, interfaceId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseGetInterfaceResponse(rsp)
+}
+
+// UpdateInterfaceWithBodyWithResponse request with arbitrary body returning *UpdateInterfaceResponse
+func (c *ClientWithResponses) UpdateInterfaceWithBodyWithResponse(ctx context.Context, interfaceId InterfaceId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateInterfaceResponse, error) {
+	rsp, err := c.UpdateInterfaceWithBody(ctx, interfaceId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateInterfaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateInterfaceWithResponse(ctx context.Context, interfaceId InterfaceId, body UpdateInterfaceJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateInterfaceResponse, error) {
+	rsp, err := c.UpdateInterface(ctx, interfaceId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateInterfaceResponse(rsp)
 }
 
 // ListInterfaceReleasesWithResponse request returning *ListInterfaceReleasesResponse
@@ -2780,6 +2977,32 @@ func (c *ClientWithResponses) CreateOrganizationWithResponse(ctx context.Context
 	return ParseCreateOrganizationResponse(rsp)
 }
 
+// GetOrganizationWithResponse request returning *GetOrganizationResponse
+func (c *ClientWithResponses) GetOrganizationWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error) {
+	rsp, err := c.GetOrganization(ctx, organizationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOrganizationResponse(rsp)
+}
+
+// UpdateOrganizationWithBodyWithResponse request with arbitrary body returning *UpdateOrganizationResponse
+func (c *ClientWithResponses) UpdateOrganizationWithBodyWithResponse(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error) {
+	rsp, err := c.UpdateOrganizationWithBody(ctx, organizationId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateOrganizationResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateOrganizationWithResponse(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error) {
+	rsp, err := c.UpdateOrganization(ctx, organizationId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateOrganizationResponse(rsp)
+}
+
 // ListOrganizationMembersWithResponse request returning *ListOrganizationMembersResponse
 func (c *ClientWithResponses) ListOrganizationMembersWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*ListOrganizationMembersResponse, error) {
 	rsp, err := c.ListOrganizationMembers(ctx, organizationId, reqEditors...)
@@ -2841,82 +3064,39 @@ func (c *ClientWithResponses) UpdateOrganizationMemberWithResponse(ctx context.C
 	return ParseUpdateOrganizationMemberResponse(rsp)
 }
 
-// GetOrganizationSettingsWithResponse request returning *GetOrganizationSettingsResponse
-func (c *ClientWithResponses) GetOrganizationSettingsWithResponse(ctx context.Context, organizationId OrganizationId, reqEditors ...RequestEditorFn) (*GetOrganizationSettingsResponse, error) {
-	rsp, err := c.GetOrganizationSettings(ctx, organizationId, reqEditors...)
+// GetCurrentUserWithResponse request returning *GetCurrentUserResponse
+func (c *ClientWithResponses) GetCurrentUserWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentUserResponse, error) {
+	rsp, err := c.GetCurrentUser(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetOrganizationSettingsResponse(rsp)
+	return ParseGetCurrentUserResponse(rsp)
 }
 
-// UpdateOrganizationSettingsWithBodyWithResponse request with arbitrary body returning *UpdateOrganizationSettingsResponse
-func (c *ClientWithResponses) UpdateOrganizationSettingsWithBodyWithResponse(ctx context.Context, organizationId OrganizationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationSettingsResponse, error) {
-	rsp, err := c.UpdateOrganizationSettingsWithBody(ctx, organizationId, contentType, body, reqEditors...)
+// GetUserWithResponse request returning *GetUserResponse
+func (c *ClientWithResponses) GetUserWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*GetUserResponse, error) {
+	rsp, err := c.GetUser(ctx, userId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseUpdateOrganizationSettingsResponse(rsp)
+	return ParseGetUserResponse(rsp)
 }
 
-func (c *ClientWithResponses) UpdateOrganizationSettingsWithResponse(ctx context.Context, organizationId OrganizationId, body UpdateOrganizationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationSettingsResponse, error) {
-	rsp, err := c.UpdateOrganizationSettings(ctx, organizationId, body, reqEditors...)
+// UpdateUserWithBodyWithResponse request with arbitrary body returning *UpdateUserResponse
+func (c *ClientWithResponses) UpdateUserWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUserWithBody(ctx, userId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseUpdateOrganizationSettingsResponse(rsp)
+	return ParseUpdateUserResponse(rsp)
 }
 
-// GetUserSettingsWithResponse request returning *GetUserSettingsResponse
-func (c *ClientWithResponses) GetUserSettingsWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*GetUserSettingsResponse, error) {
-	rsp, err := c.GetUserSettings(ctx, userId, reqEditors...)
+func (c *ClientWithResponses) UpdateUserWithResponse(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUser(ctx, userId, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetUserSettingsResponse(rsp)
-}
-
-// UpdateUserSettingsWithBodyWithResponse request with arbitrary body returning *UpdateUserSettingsResponse
-func (c *ClientWithResponses) UpdateUserSettingsWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserSettingsResponse, error) {
-	rsp, err := c.UpdateUserSettingsWithBody(ctx, userId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateUserSettingsResponse(rsp)
-}
-
-func (c *ClientWithResponses) UpdateUserSettingsWithResponse(ctx context.Context, userId UserId, body UpdateUserSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserSettingsResponse, error) {
-	rsp, err := c.UpdateUserSettings(ctx, userId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateUserSettingsResponse(rsp)
-}
-
-// ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
-func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetHealthResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Health
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	}
-
-	return response, nil
+	return ParseUpdateUserResponse(rsp)
 }
 
 // ParseGetInterfaceByPathResponse parses an HTTP response from a GetInterfaceByPathWithResponse call
@@ -2962,7 +3142,7 @@ func ParseGetInterfaceByPathResponse(rsp *http.Response) (*GetInterfaceByPathRes
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2991,11 +3171,18 @@ func ParseListInterfacesResponse(rsp *http.Response) (*ListInterfacesResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Interface
+		var dest []InterfaceDescriptor
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest UnauthorizedError
@@ -3031,7 +3218,7 @@ func ParseCreateInterfaceResponse(rsp *http.Response) (*CreateInterfaceResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest Interface
+		var dest InterfaceDescriptor
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3106,7 +3293,7 @@ func ParseDeleteInterfaceResponse(rsp *http.Response) (*DeleteInterfaceResponse,
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3160,7 +3347,7 @@ func ParseGetInterfaceResponse(rsp *http.Response) (*GetInterfaceResponse, error
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3168,6 +3355,60 @@ func ParseGetInterfaceResponse(rsp *http.Response) (*GetInterfaceResponse, error
 
 	case rsp.StatusCode == 200:
 		// Content-type (text/plain) unsupported
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateInterfaceResponse parses an HTTP response from a UpdateInterfaceWithResponse call
+func ParseUpdateInterfaceResponse(rsp *http.Response) (*UpdateInterfaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateInterfaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InterfaceDescriptor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest UnauthorizedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ForbiddenError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
@@ -3217,7 +3458,7 @@ func ParseListInterfaceReleasesResponse(rsp *http.Response) (*ListInterfaceRelea
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3271,7 +3512,7 @@ func ParseCreateInterfaceReleaseResponse(rsp *http.Response) (*CreateInterfaceRe
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3318,7 +3559,7 @@ func ParseDeleteInterfaceReleaseResponse(rsp *http.Response) (*DeleteInterfaceRe
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3372,7 +3613,7 @@ func ParseGetInterfaceReleaseResponse(rsp *http.Response) (*GetInterfaceReleaseR
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3398,7 +3639,7 @@ func ParseListInterfaceRevisionsResponse(rsp *http.Response) (*ListInterfaceRevi
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []InterfaceRevision
+		var dest []InterfaceRevisionDescriptor
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3426,7 +3667,7 @@ func ParseListInterfaceRevisionsResponse(rsp *http.Response) (*ListInterfaceRevi
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3452,7 +3693,7 @@ func ParseCreateInterfaceRevisionResponse(rsp *http.Response) (*CreateInterfaceR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest InterfaceRevision
+		var dest InterfaceRevisionDescriptor
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3480,7 +3721,7 @@ func ParseCreateInterfaceRevisionResponse(rsp *http.Response) (*CreateInterfaceR
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3534,7 +3775,7 @@ func ParseGetInterfaceRevisionResponse(rsp *http.Response) (*GetInterfaceRevisio
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3646,6 +3887,114 @@ func ParseCreateOrganizationResponse(rsp *http.Response) (*CreateOrganizationRes
 	return response, nil
 }
 
+// ParseGetOrganizationResponse parses an HTTP response from a GetOrganizationWithResponse call
+func ParseGetOrganizationResponse(rsp *http.Response) (*GetOrganizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOrganizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Organization
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest UnauthorizedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ForbiddenError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateOrganizationResponse parses an HTTP response from a UpdateOrganizationWithResponse call
+func ParseUpdateOrganizationResponse(rsp *http.Response) (*UpdateOrganizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateOrganizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Organization
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest UnauthorizedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ForbiddenError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListOrganizationMembersResponse parses an HTTP response from a ListOrganizationMembersWithResponse call
 func ParseListOrganizationMembersResponse(rsp *http.Response) (*ListOrganizationMembersResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3689,7 +4038,7 @@ func ParseListOrganizationMembersResponse(rsp *http.Response) (*ListOrganization
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3743,7 +4092,7 @@ func ParseAddOrganizationMemberResponse(rsp *http.Response) (*AddOrganizationMem
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3844,7 +4193,7 @@ func ParseGetOrganizationMemberResponse(rsp *http.Response) (*GetOrganizationMem
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3898,7 +4247,7 @@ func ParseUpdateOrganizationMemberResponse(rsp *http.Response) (*UpdateOrganizat
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3909,22 +4258,62 @@ func ParseUpdateOrganizationMemberResponse(rsp *http.Response) (*UpdateOrganizat
 	return response, nil
 }
 
-// ParseGetOrganizationSettingsResponse parses an HTTP response from a GetOrganizationSettingsWithResponse call
-func ParseGetOrganizationSettingsResponse(rsp *http.Response) (*GetOrganizationSettingsResponse, error) {
+// ParseGetCurrentUserResponse parses an HTTP response from a GetCurrentUserWithResponse call
+func ParseGetCurrentUserResponse(rsp *http.Response) (*GetCurrentUserResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetOrganizationSettingsResponse{
+	response := &GetCurrentUserResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest User
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest UnauthorizedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetUserResponse parses an HTTP response from a GetUserWithResponse call
+func ParseGetUserResponse(rsp *http.Response) (*GetUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest User
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3952,7 +4341,7 @@ func ParseGetOrganizationSettingsResponse(rsp *http.Response) (*GetOrganizationS
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3963,22 +4352,22 @@ func ParseGetOrganizationSettingsResponse(rsp *http.Response) (*GetOrganizationS
 	return response, nil
 }
 
-// ParseUpdateOrganizationSettingsResponse parses an HTTP response from a UpdateOrganizationSettingsWithResponse call
-func ParseUpdateOrganizationSettingsResponse(rsp *http.Response) (*UpdateOrganizationSettingsResponse, error) {
+// ParseUpdateUserResponse parses an HTTP response from a UpdateUserWithResponse call
+func ParseUpdateUserResponse(rsp *http.Response) (*UpdateUserResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &UpdateOrganizationSettingsResponse{
+	response := &UpdateUserResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest User
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -4006,115 +4395,7 @@ func ParseUpdateOrganizationSettingsResponse(rsp *http.Response) (*UpdateOrganiz
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetUserSettingsResponse parses an HTTP response from a GetUserSettingsWithResponse call
-func ParseGetUserSettingsResponse(rsp *http.Response) (*GetUserSettingsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetUserSettingsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest UnauthorizedError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest ForbiddenError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseUpdateUserSettingsResponse parses an HTTP response from a UpdateUserSettingsWithResponse call
-func ParseUpdateUserSettingsResponse(rsp *http.Response) (*UpdateUserSettingsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &UpdateUserSettingsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest UnauthorizedError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest ForbiddenError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest Error
+		var dest NotFoundError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -1,8 +1,7 @@
 package client
 
 //TODO: make this link robust through version changes
-// //go:generate oapi-codegen --config=oapi.config.yaml ../../.ifc/.local/interface_01kn3ma93qe59r0p8kw6821y2n/revision_01kn3r6n8zf3aa3rrnzmakqncn.yaml
-// //go:generate oapi-codegen --config=oapi.config.yaml ../../.ifc/ifc7-rest/v0
+// //go:generate oapi-codegen --config=oapi.config.yaml ../../.ifc/v0.yaml
 //go:generate mockgen -source=client.ifc.go -destination=client.mock.go -package=client
 
 import (
@@ -45,6 +44,21 @@ func NewAPIClient(ctx context.Context, opts ...ClientOption) (*Ifc7ApiClient, er
 	client.ClientWithResponses = clientWithResponses
 
 	return client, nil
+}
+
+// CurrentUserID returns the ID of the authenticated user.
+func (c *ClientWithResponses) CurrentUserID(ctx context.Context) (UserId, error) {
+	resp, err := c.GetCurrentUserWithResponse(ctx)
+	if err != nil {
+		return "", fmt.Errorf("error fetching current user: %w", err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("error fetching current user: HTTP %d", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", fmt.Errorf("error fetching current user: unexpected response body")
+	}
+	return resp.JSON200.Id, nil
 }
 
 // bearerTokenEditor returns a RequestEditorFn that injects a valid bearer token.

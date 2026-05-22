@@ -1,6 +1,3 @@
 use:
-  - ref: dev.ifc7.dev/api/v0/ifc/orgs/Ifc7/ifc7-rest@v1.2.0
-own:
-  - name: cli-config
-    ref: dev.ifc7.dev/api/v0/ifc/orgs/Ifc7/cli-config
-    path: ./interfaces
+    - ref: staging.ifc7.dev/api/v0/i/o/interface7/rest-api
+own: []

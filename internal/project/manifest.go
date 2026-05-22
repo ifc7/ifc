@@ -102,7 +102,8 @@ func (m *Manifest) upsertInterface(ifc client.Interface) error {
 			slog.Warn(fmt.Sprintf("interface %s description changed from %s to %s", manifestIfc.Id, manifestDesc, desc))
 			manifestIfc.Description = &desc
 		}
-		if manifestIfc.LatestRevision.Id != ifc.LatestRevision.Id {
+		if manifestIfc.LatestRevision != nil && ifc.LatestRevision != nil &&
+			manifestIfc.LatestRevision.Id != ifc.LatestRevision.Id {
 			slog.Warn(fmt.Sprintf("interface %s current revision changed from %s to %s", manifestIfc.Id, manifestIfc.LatestRevision.Id, ifc.LatestRevision.Id))
 			manifestIfc.LatestRevision = ifc.LatestRevision
 		}
@@ -135,8 +136,8 @@ func (m *Manifest) upsertRevision(ifcId client.InterfaceId, rev client.Interface
 		if manifestRev.Checksum != rev.Checksum {
 			return fmt.Errorf("revision %s checksum changed from %s to %s", manifestRev.Id, manifestRev.Checksum, rev.Checksum)
 		}
-		if manifestRev.Definition != rev.Definition {
-			return fmt.Errorf("revision %s definition changed from %s to %s", manifestRev.Id, manifestRev.Definition, rev.Definition)
+		if manifestRev.Specification != rev.Specification {
+			return fmt.Errorf("revision %s specification changed from %s to %s", manifestRev.Id, manifestRev.Specification, rev.Specification)
 		}
 		// TODO: should we verify the checksum of the revision definition here?
 		if manifestRev.CreatedAt != rev.CreatedAt {

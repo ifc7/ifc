@@ -25,7 +25,7 @@ func TestIfc7ApiClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.ListInterfacesWithResponse(t.Context())
+	response, err := client.ListInterfacesWithResponse(t.Context(), nil)
 	if err != nil {
 		t.Fatal(fmt.Errorf("failed to list interfaces: %w", err))
 	}

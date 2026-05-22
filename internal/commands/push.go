@@ -25,9 +25,12 @@ Push the latest copies of interfaces managed by this project to a remote hub.
 		if len(args) == 1 {
 			params.Name = args[0]
 		}
-		err = proj.Push(cmd.Context(), params)
+		messages, err := proj.Push(cmd.Context(), params)
 		if err != nil {
 			return fmt.Errorf("error pushing interfaces: %w", err)
+		}
+		for _, message := range messages {
+			fmt.Println(message)
 		}
 		return nil
 	},
