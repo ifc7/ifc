@@ -498,11 +498,21 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		}
 		interfaceId := response.JSON201.Id
 		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, interfaceId))
-		revs := slices.Collect(maps.Values(manifestEntry.Revisions))
-		slices.SortStableFunc(revs, func(i, j *client.InterfaceRevision) int {
-			return i.CreatedAt.Compare(j.CreatedAt)
+		// Replace the temporary manifest key (the interface name) with the
+		// server-assigned interface ID everywhere in the manifest.
+		if err := p.manifest.reassignInterfaceID(interfaceID, interfaceId); err != nil {
+			return messages, fmt.Errorf("error updating interface ID in manifest: %w", err)
+		}
+		// Record the new ref so future commits and pushes resolve to this interface.
+		if err := p.config.updateOwnedInterfaceRef(own.Name, interfaceId); err != nil {
+			return messages, fmt.Errorf("error updating owned interface ref: %w", err)
+		}
+		revKeys := slices.Collect(maps.Keys(manifestEntry.Revisions))
+		slices.SortStableFunc(revKeys, func(a, b string) int {
+			return manifestEntry.Revisions[a].CreatedAt.Compare(manifestEntry.Revisions[b].CreatedAt)
 		})
-		for _, rev := range revs {
+		for _, revKey := range revKeys {
+			rev := manifestEntry.Revisions[revKey]
 			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, interfaceId, client.CreateRevisionRequest{
 				CreatedBy:     userID,
 				Specification: rev.Specification,
@@ -513,6 +523,13 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			}
 			if result.StatusCode() != http.StatusCreated {
 				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+			}
+			if result.JSON201 == nil {
+				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
+			}
+			// Replace the temporary checksum key/ID with the server-assigned revision ID.
+			if err := p.manifest.reassignRevisionID(interfaceId, revKey, result.JSON201.Id); err != nil {
+				return messages, fmt.Errorf("error updating revision ID in manifest: %w", err)
 			}
 			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
@@ -606,13 +623,14 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	if len(manifestMissingRevs) > 0 {
 		return messages, fmt.Errorf("revisions out of sync with server %v", manifestMissingRevs)
 	}
-	var serverMissingRevs []*client.InterfaceRevision
-	for _, rev := range manifestEntry.Revisions {
+	var serverMissingRevKeys []string
+	for key, rev := range manifestEntry.Revisions {
 		if _, ok := serverRevisionsMap[rev.Id]; !ok {
-			serverMissingRevs = append(serverMissingRevs, rev)
+			serverMissingRevKeys = append(serverMissingRevKeys, key)
 		}
 	}
-	for _, rev := range serverMissingRevs {
+	for _, revKey := range serverMissingRevKeys {
+		rev := manifestEntry.Revisions[revKey]
 		// TODO: check if revisions existing in server need updating
 		// TODO: add API endpoint for updating revisions
 		result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
@@ -626,8 +644,14 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		if result.StatusCode() != http.StatusCreated {
 			return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
 		}
+		if result.JSON201 == nil {
+			return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
+		}
+		// Replace the temporary checksum key/ID with the server-assigned revision ID.
+		if err := p.manifest.reassignRevisionID(id, revKey, result.JSON201.Id); err != nil {
+			return messages, fmt.Errorf("error updating revision ID in manifest: %w", err)
+		}
 		messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
-		// TODO: manifest revision should be updated with new revision ID
 	}
 	// TODO: handle releases
 	if len(messages) == 0 {

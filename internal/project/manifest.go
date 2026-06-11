@@ -113,17 +113,29 @@ func (m *Manifest) upsertInterface(ifc client.Interface) error {
 
 // upsertRevision adds or updates a revision to an interface in the manifest
 func (m *Manifest) upsertRevision(ifcId client.InterfaceId, rev client.InterfaceRevision) error {
-	if _, ok := m.Interfaces[ifcId]; !ok {
+	ifc, ok := m.Interfaces[ifcId]
+	if !ok {
 		return fmt.Errorf("interface %s not found in manifest", ifcId)
+	}
+	// A locally committed revision is temporarily keyed by its checksum until it
+	// receives a server-assigned revision ID. If the server returns a revision
+	// with matching content, drop the placeholder and redirect any references to
+	// the real revision ID so the checksum is never used as a key/ID.
+	for key, existing := range ifc.Revisions {
+		if key == rev.Id || existing.Checksum != rev.Checksum {
+			continue
+		}
+		delete(ifc.Revisions, key)
+		ifc.redirectRevisionRefs(key, existing.Id, rev.Checksum, rev.Id)
 	}
 	notes := ""
 	if rev.Notes != nil {
 		notes = *rev.Notes
 	}
-	manifestRev, ok := m.Interfaces[ifcId].Revisions[rev.Id]
+	manifestRev, ok := ifc.Revisions[rev.Id]
 	if !ok {
 		// create new revision entry
-		m.Interfaces[ifcId].Revisions[rev.Id] = &rev
+		ifc.Revisions[rev.Id] = &rev
 	} else {
 		manifestNotes := ""
 		if manifestRev.Notes != nil {
@@ -145,6 +157,74 @@ func (m *Manifest) upsertRevision(ifcId client.InterfaceId, rev client.Interface
 		}
 	}
 	return nil
+}
+
+// reassignInterfaceID re-keys an interface from a temporary local key (e.g. its
+// name) to the server-assigned interface ID and updates every reference to it.
+func (m *Manifest) reassignInterfaceID(oldKey string, newID client.InterfaceId) error {
+	if oldKey == newID {
+		return nil
+	}
+	ifc, ok := m.Interfaces[oldKey]
+	if !ok {
+		return fmt.Errorf("interface %s not found in manifest", oldKey)
+	}
+	if _, exists := m.Interfaces[newID]; exists {
+		return fmt.Errorf("interface %s already exists in manifest", newID)
+	}
+	ifc.Id = newID
+	delete(m.Interfaces, oldKey)
+	m.Interfaces[newID] = ifc
+	for _, rel := range ifc.Releases {
+		rel.InterfaceId = newID
+	}
+	return nil
+}
+
+// reassignRevisionID re-keys a revision within an interface from a temporary
+// local key (e.g. its checksum) to the server-assigned revision ID and updates
+// every reference to it.
+func (m *Manifest) reassignRevisionID(ifcId client.InterfaceId, oldKey string, newID client.InterfaceRevisionId) error {
+	ifc, ok := m.Interfaces[ifcId]
+	if !ok {
+		return fmt.Errorf("interface %s not found in manifest", ifcId)
+	}
+	if oldKey == newID {
+		return nil
+	}
+	if _, ok := ifc.Revisions[oldKey]; !ok {
+		return fmt.Errorf("revision %s not found in manifest interface %s", oldKey, ifcId)
+	}
+	ifc.rekeyRevision(oldKey, newID)
+	return nil
+}
+
+// rekeyRevision moves a revision from oldKey to newID, updating the revision's
+// own Id field and redirecting any references that pointed at it.
+func (ifc *ManifestInterface) rekeyRevision(oldKey string, newID client.InterfaceRevisionId) {
+	rev, ok := ifc.Revisions[oldKey]
+	if !ok || oldKey == newID {
+		return
+	}
+	oldID := rev.Id
+	rev.Id = newID
+	delete(ifc.Revisions, oldKey)
+	ifc.Revisions[newID] = rev
+	ifc.redirectRevisionRefs(oldKey, oldID, rev.Checksum, newID)
+}
+
+// redirectRevisionRefs points the latest-revision marker and any releases that
+// referenced a revision (by its former key, former ID, or checksum) at newID.
+func (ifc *ManifestInterface) redirectRevisionRefs(oldKey string, oldID string, checksum string, newID client.InterfaceRevisionId) {
+	if ifc.LatestRevision != nil &&
+		(ifc.LatestRevision.Id == oldKey || ifc.LatestRevision.Id == oldID || ifc.LatestRevision.Checksum == checksum) {
+		ifc.LatestRevision.Id = newID
+	}
+	for _, rel := range ifc.Releases {
+		if rel.InterfaceRevisionId == oldKey || rel.InterfaceRevisionId == oldID {
+			rel.InterfaceRevisionId = newID
+		}
+	}
 }
 
 // upsertRelease adds or updates an interface release in the manifest
