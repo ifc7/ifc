@@ -29,6 +29,9 @@ Push the latest copies of interfaces managed by this project to a remote hub.
 		if err != nil {
 			return fmt.Errorf("error pushing interfaces: %w", err)
 		}
+		if err := proj.Write(); err != nil {
+			return fmt.Errorf("error writing project changes: %w", err)
+		}
 		for _, message := range messages {
 			fmt.Println(message)
 		}
