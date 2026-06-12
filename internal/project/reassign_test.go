@@ -177,6 +177,7 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 		newIfcID = "interface_01kn3ma93qe59r0p8kw6821y2n"
 		newRevID = "revision_01kn3r6n8zf3aa3rrnzmakqncn"
 	)
+	serverCreatedAt := time.Date(2026, time.June, 12, 14, 54, 56, 58598000, time.UTC)
 	cfg := Config{
 		Own: []Owned{{Name: "ifc7-rest", Ref: "", Path: testApiPath}},
 	}
@@ -197,7 +198,10 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(newIfcID)), gomock.Any()).
 			Return(&client.CreateInterfaceRevisionResponse{
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
-				JSON201:      &client.InterfaceRevisionDescriptor{Id: newRevID},
+				JSON201: &client.InterfaceRevisionDescriptor{
+					Id:        newRevID,
+					CreatedAt: serverCreatedAt,
+				},
 			}, nil).
 			AnyTimes()
 	})
@@ -224,6 +228,9 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	}
 	if _, ok := ifc.Revisions[newRevID]; !ok {
 		t.Fatalf("revision not re-keyed to %q", newRevID)
+	}
+	if got := ifc.Revisions[newRevID].CreatedAt; !got.Equal(serverCreatedAt) {
+		t.Fatalf("revision CreatedAt = %v, want %v", got, serverCreatedAt)
 	}
 	// The owned config entry should now reference the server interface ID.
 	found := false

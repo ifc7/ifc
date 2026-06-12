@@ -527,9 +527,8 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			if result.JSON201 == nil {
 				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 			}
-			// Replace the temporary checksum key/ID with the server-assigned revision ID.
-			if err := p.manifest.reassignRevisionID(interfaceId, revKey, result.JSON201.Id); err != nil {
-				return messages, fmt.Errorf("error updating revision ID in manifest: %w", err)
+			if err := p.recordPushedRevision(interfaceId, revKey, result.JSON201); err != nil {
+				return messages, err
 			}
 			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
@@ -647,9 +646,8 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		if result.JSON201 == nil {
 			return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 		}
-		// Replace the temporary checksum key/ID with the server-assigned revision ID.
-		if err := p.manifest.reassignRevisionID(id, revKey, result.JSON201.Id); err != nil {
-			return messages, fmt.Errorf("error updating revision ID in manifest: %w", err)
+		if err := p.recordPushedRevision(id, revKey, result.JSON201); err != nil {
+			return messages, err
 		}
 		messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 	}
@@ -658,6 +656,18 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		messages = append(messages, fmt.Sprintf("Interface %q is up to date.", own.Name))
 	}
 	return messages, nil
+}
+
+// recordPushedRevision re-keys a locally committed revision to its server-assigned
+// ID and copies server-authoritative metadata into the manifest.
+func (p *Project) recordPushedRevision(ifcID client.InterfaceId, revKey string, serverRev *client.InterfaceRevisionDescriptor) error {
+	if err := p.manifest.reassignRevisionID(ifcID, revKey, serverRev.Id); err != nil {
+		return fmt.Errorf("error updating revision ID in manifest: %w", err)
+	}
+	if rev := p.manifest.Interfaces[ifcID].Revisions[serverRev.Id]; rev != nil {
+		rev.CreatedAt = serverRev.CreatedAt
+	}
+	return nil
 }
 
 // splitRef splits an interface reference into its scope, owner, and name components
