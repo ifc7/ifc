@@ -152,8 +152,9 @@ func (m *Manifest) upsertRevision(ifcId client.InterfaceId, rev client.Interface
 			return fmt.Errorf("revision %s specification changed from %s to %s", manifestRev.Id, manifestRev.Specification, rev.Specification)
 		}
 		// TODO: should we verify the checksum of the revision definition here?
-		if manifestRev.CreatedAt != rev.CreatedAt {
-			return fmt.Errorf("revision %s created at changed from %s to %s", manifestRev.Id, manifestRev.CreatedAt, rev.CreatedAt)
+		if !manifestRev.CreatedAt.Equal(rev.CreatedAt) {
+			slog.Warn(fmt.Sprintf("revision %s created at changed from %s to %s", manifestRev.Id, manifestRev.CreatedAt, rev.CreatedAt))
+			manifestRev.CreatedAt = rev.CreatedAt
 		}
 	}
 	return nil

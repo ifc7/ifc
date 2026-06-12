@@ -135,6 +135,43 @@ func TestManifest_upsertRevision_replacesChecksumPlaceholder(t *testing.T) {
 	}
 }
 
+func TestManifest_upsertRevision_syncsCreatedAt(t *testing.T) {
+	const revID = "revision_01kty58dhsefhbdvnqczwhc9xt"
+	localCreatedAt := time.Date(2026, time.June, 12, 7, 53, 17, 479218000, time.FixedZone("PDT", -7*60*60))
+	serverCreatedAt := time.Date(2026, time.June, 12, 14, 54, 56, 58598000, time.UTC)
+
+	mft := &Manifest{
+		Interfaces: map[string]*ManifestInterface{
+			"interface_abc": {
+				Interface: client.Interface{Id: "interface_abc"},
+				Revisions: map[string]*client.InterfaceRevision{
+					revID: {
+						Checksum:      testChecksum,
+						Id:            revID,
+						Specification: "c3BlYw==",
+						CreatedAt:     localCreatedAt,
+						CreatedBy:     testUserID,
+					},
+				},
+			},
+		},
+	}
+	serverRev := client.InterfaceRevision{
+		Checksum:      testChecksum,
+		Id:            revID,
+		Specification: "c3BlYw==",
+		CreatedAt:     serverCreatedAt,
+		CreatedBy:     testUserID,
+	}
+	if err := mft.upsertRevision("interface_abc", serverRev); err != nil {
+		t.Fatalf("upsertRevision returned error: %v", err)
+	}
+	got := mft.Interfaces["interface_abc"].Revisions[revID].CreatedAt
+	if !got.Equal(serverCreatedAt) {
+		t.Fatalf("CreatedAt = %v, want %v", got, serverCreatedAt)
+	}
+}
+
 func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	const (
 		newIfcID = "interface_01kn3ma93qe59r0p8kw6821y2n"
