@@ -21,7 +21,6 @@ type Ifc7ApiClient struct {
 }
 
 // NewAPIClient creates an API client with bearer token injection when credentials are provided.
-// If no credentials are provided, the client is created without token injection.
 func NewAPIClient(ctx context.Context, opts ...ClientOption) (*Ifc7ApiClient, error) {
 	client := &Ifc7ApiClient{}
 
