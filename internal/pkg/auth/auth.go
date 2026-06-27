@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -18,15 +17,16 @@ import (
 
 // Credentials represents the JWT credentials used to access the IFC API.
 type Credentials struct {
-	AccessToken  string
-	ExpiresAt    time.Time
-	RefreshToken *string
+	AccessToken  string     `json:"access_token"`
+	ExpiresAt    time.Time  `json:"expires_at"`
+	RefreshToken *string    `json:"refresh_token,omitempty"`
 }
 
 // CredentialsService manages getting and refreshing JWT credentials.
 type CredentialsService struct {
 	*ClientWithResponses
 	Credentials            *Credentials
+	credentialStore        *FileCredentialStore
 	deviceFlowHost         string
 	deviceFlowClientId     string
 	deviceFlowClientSecret string
@@ -35,6 +35,14 @@ type CredentialsService struct {
 
 // CredentialsServiceOptions are functional options that can be used to configure a CredentialsService.
 type CredentialsServiceOptions func(*CredentialsService) error
+
+// WithCredentialStore sets the credential store (for tests).
+func WithCredentialStore(store *FileCredentialStore) CredentialsServiceOptions {
+	return func(s *CredentialsService) error {
+		s.credentialStore = store
+		return nil
+	}
+}
 
 // NewCredentialsService creates a new CredentialsService with the given options.
 func NewCredentialsService(opts ...CredentialsServiceOptions) (*CredentialsService, error) {
@@ -48,6 +56,13 @@ func NewCredentialsService(opts ...CredentialsServiceOptions) (*CredentialsServi
 			return nil, err
 		}
 	}
+	if client.credentialStore == nil {
+		store, err := NewFileCredentialStore()
+		if err != nil {
+			return nil, err
+		}
+		client.credentialStore = store
+	}
 	var clientOpts []ClientOption
 	clientOpts = append(clientOpts, WithRequestEditorFn(client.clientHeaderEditor()))
 	clientWithResponses, err := NewClientWithResponses(client.deviceFlowHost, clientOpts...)
@@ -58,24 +73,19 @@ func NewCredentialsService(opts ...CredentialsServiceOptions) (*CredentialsServi
 	return &client, nil
 }
 
-// ReadCredentials reads API credentials stored locally
+// ReadCredentials reads API credentials stored locally.
 func (s *CredentialsService) ReadCredentials() error {
-	// TODO: where/how to read will depend on platform
-	creds, err := readCredentialsFromProject()
+	credentials, err := s.credentialStore.Read()
 	if err != nil {
 		return err
 	}
-	s.Credentials = creds
+	s.Credentials = credentials
 	return nil
 }
 
-// WriteCredentials writes API credentials to file locally
+// WriteCredentials writes API credentials to file locally.
 func (s *CredentialsService) WriteCredentials() error {
-	// TODO: where/how to write will depend on platform
-	if s.Credentials == nil {
-		return fmt.Errorf("credentials not set")
-	}
-	return writeCredentialsToProject(*s.Credentials)
+	return s.credentialStore.Write(s.Credentials)
 }
 
 // Login performs the full device flow: request codes, prompt user, poll for tokens.
@@ -321,25 +331,3 @@ func (t *AccessTokenResponse) expiresTime() time.Time {
 	return time.Now().Add(time.Duration(t.ExpiresIn) * time.Second)
 }
 
-// readCredentialsFromProject will read credentials in from a file in the local .ifc folder
-func readCredentialsFromProject() (*Credentials, error) {
-	file, err := os.ReadFile(internal.IfcCredentialsPath)
-	if err != nil {
-		return nil, err
-	}
-	credentials := Credentials{}
-	err = json.Unmarshal(file, &credentials)
-	if err != nil {
-		return nil, err
-	}
-	return &credentials, nil
-}
-
-// writeCredentialsToProject will write credentials in to a file in the local .ifc folder
-func writeCredentialsToProject(credentials Credentials) error {
-	file, err := json.MarshalIndent(credentials, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(internal.IfcCredentialsPath, file, 0600)
-}

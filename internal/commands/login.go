@@ -29,10 +29,6 @@ You will be prompted to open a URL in your browser and log in.
 		if err != nil {
 			return fmt.Errorf("failed to login: %w", err)
 		}
-		err = client.WriteCredentials()
-		if err != nil {
-			return fmt.Errorf("failed to write credentials: %w", err)
-		}
 		fmt.Println("\nLogged in successfully.")
 		return nil
 	},

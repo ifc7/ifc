@@ -3,10 +3,9 @@ package internal
 import "path"
 
 const (
-	IfcFolder          = ".ifc"
-	IfcConfigFile      = "ifc.yaml"
-	IfcManifestFile    = "manifest.json"
-	IfcCredentialsFile = "credentials.json"
+	IfcFolder       = ".ifc"
+	IfcConfigFile   = "ifc.yaml"
+	IfcManifestFile = "manifest.json"
 
 	DefaultAPIHost         = "staging.ifc7.dev"
 	DefaultAPIURL          = "https://" + DefaultAPIHost + "/api/v0/"
@@ -17,8 +16,7 @@ const (
 )
 
 var (
-	IfcManifestPath    = path.Join(IfcFolder, IfcManifestFile)
-	IfcCredentialsPath = path.Join(IfcFolder, IfcCredentialsFile)
+	IfcManifestPath = path.Join(IfcFolder, IfcManifestFile)
 )
 
 var (
