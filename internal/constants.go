@@ -11,7 +11,7 @@ const (
 	DefaultAPIURL          = "https://" + DefaultAPIHost + "/api/v0/"
 	DeviceFlowClientId     = "4d14om5n01t8f29kja086002re"
 	DeviceFlowClientSecret = "" // no secret used
-	DeviceFlowURL          = "https://device-auth.nonprod.ifc7.dev"
+	DeviceFlowURL          = "https://device-auth.staging.ifc7.dev"
 	CognitoDomain          = "ifc7-device-auth.auth.us-east-1.amazoncognito.com"
 )
 
