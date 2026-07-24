@@ -27,6 +27,10 @@ var (
 	ErrProjectExists        = fmt.Errorf("project already exists")
 	ErrInvalidRef           = fmt.Errorf("invalid reference")
 	ErrInvalidSpecification = fmt.Errorf("invalid interface specification")
+
+	promptNewInterfaceCommit = tui.PromptNewInterfaceCommit
+	promptNewRevisionCommit  = tui.PromptNewRevisionCommit
+	promptInterfaceOwner     = tui.PromptInterfaceOwner
 )
 
 // Project holds the state of an ifc7 managed project
@@ -394,7 +398,7 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 	encoded := base64Encode(b)
 	manifestIfc, ok := p.manifest.Interfaces[id]
 	if !ok {
-		newIfc, err := tui.PromptNewInterfaceCommit(ctx, own.Name)
+		newIfc, err := promptNewInterfaceCommit(ctx, own.Name)
 		if err != nil {
 			return fmt.Errorf("error prompting for new interface: %w", err)
 		}
@@ -425,7 +429,7 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 		}
 	} else {
 		if manifestIfc.LatestRevision == nil || manifestIfc.LatestRevision.Checksum != sha {
-			newRev, err := tui.PromptNewRevisionCommit(ctx)
+			newRev, err := promptNewRevisionCommit(ctx, own.Name)
 			if err != nil {
 				return fmt.Errorf("error prompting for new revision: %w", err)
 			}
@@ -476,15 +480,69 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	var messages []string
 	if own.Ref == "" {
 		// handle interfaces not yet saved on the server
-		userID, err := p.client.CurrentUserID(ctx)
+		userResp, err := p.client.GetCurrentUserWithResponse(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error fetching current user: %w", err)
 		}
+		if userResp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("error fetching current user: HTTP %d", userResp.StatusCode())
+		}
+		if userResp.JSON200 == nil {
+			return nil, fmt.Errorf("error fetching current user: unexpected response body")
+		}
+		user := userResp.JSON200
+		userID := user.Id
+
+		orgsResp, err := p.client.ListOrganizationsWithResponse(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error listing organizations: %w", err)
+		}
+		if orgsResp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("error listing organizations: HTTP %d", orgsResp.StatusCode())
+		}
+		if orgsResp.JSON200 == nil {
+			return nil, fmt.Errorf("error listing organizations: unexpected response body")
+		}
+
+		userLabel := user.Name
+		if userLabel == "" {
+			userLabel = user.Slug
+		}
+		if userLabel == "" {
+			userLabel = "You (current user)"
+		} else {
+			userLabel = fmt.Sprintf("You (%s)", userLabel)
+		}
+		options := []tui.InterfaceOwnerOption{{
+			ID:    string(userID),
+			Label: userLabel,
+			Kind:  "user",
+		}}
+		for _, org := range *orgsResp.JSON200 {
+			label := org.Name
+			if label == "" {
+				label = org.Slug
+			}
+			if label == "" {
+				label = string(org.Id)
+			}
+			options = append(options, tui.InterfaceOwnerOption{
+				ID:    string(org.Id),
+				Label: label,
+				Kind:  "org",
+			})
+		}
+
+		selectedOwner, err := promptInterfaceOwner(ctx, own.Name, options)
+		if err != nil {
+			return nil, fmt.Errorf("error prompting for interface owner: %w", err)
+		}
+
 		response, err := p.client.CreateInterfaceWithResponse(ctx, client.CreateInterfaceRequest{
 			Description: manifestEntry.Description,
 			Name:        manifestEntry.Name,
 			Type:        manifestEntry.Type,
-			Owner:       userID,
+			Owner:       client.InterfaceOwner(selectedOwner.ID),
 			IsPublic:    true, // TODO: be able to set this
 		})
 		if err != nil {

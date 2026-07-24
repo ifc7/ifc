@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/ifc7/ifc/internal/client"
 	"github.com/ifc7/ifc/internal/pkg/fileio"
 	"github.com/ifc7/ifc/internal/pkg/testutils"
+	"github.com/ifc7/ifc/internal/tui"
 )
 
 var (
@@ -147,12 +149,12 @@ func TestProject_Use(t *testing.T) {
 			config:   Config{},
 			manifest: mustParseManifest(t, testManifestBytes),
 			useParams: UseParams{
-				Ref: "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+				Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
 			},
 			expConfig: Config{
 				Use: []Used{
 					{
-						Ref: "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
 					},
 				},
 			},
@@ -179,13 +181,13 @@ func TestProject_Use(t *testing.T) {
 			config: Config{
 				Use: []Used{
 					{
-						Ref: "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
 					},
 				},
 			},
 			manifest: mustParseManifest(t, testManifestBytes),
 			useParams: UseParams{
-				Ref: "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+				Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
 			},
 			expErr: ErrRefExists,
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
@@ -303,7 +305,7 @@ func TestProject_Fetch(t *testing.T) {
 			config: Config{
 				Use: []Used{
 					{
-						Ref: "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
 					},
 				},
 			},
@@ -385,6 +387,24 @@ func TestProject_Fetch(t *testing.T) {
 }
 
 func TestProject_Commit(t *testing.T) {
+	origNewInterfaceCommit := promptNewInterfaceCommit
+	origNewRevisionCommit := promptNewRevisionCommit
+	promptNewInterfaceCommit = func(ctx context.Context, name string) (tui.NewInterface, error) {
+		return tui.NewInterface{
+			Name:          name,
+			Description:   "test description",
+			RevisionNotes: "test revision notes",
+			Type:          client.OPENAPI,
+		}, nil
+	}
+	promptNewRevisionCommit = func(ctx context.Context, name string) (tui.NewRevision, error) {
+		return tui.NewRevision{Notes: "test revision notes"}, nil
+	}
+	t.Cleanup(func() {
+		promptNewInterfaceCommit = origNewInterfaceCommit
+		promptNewRevisionCommit = origNewRevisionCommit
+	})
+
 	for name, tc := range map[string]struct {
 		config       Config
 		manifest     Manifest
@@ -397,7 +417,7 @@ func TestProject_Commit(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "ifc7-rest",
-						Ref:  "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},
@@ -479,7 +499,7 @@ func TestProject_Push(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "ifc7-rest",
-						Ref:  "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},
@@ -549,7 +569,7 @@ func TestProject_Push(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "missing",
-						Ref:  "staging.ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},

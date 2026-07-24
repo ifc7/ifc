@@ -23,10 +23,24 @@ type NewInterface struct {
 }
 
 func PromptNewInterfaceCommit(ctx context.Context, name string) (NewInterface, error) {
+	_ = ctx
+	model := newNewInterfaceCommitModel(name)
+	program := tea.NewProgram(model)
+	finalModel, err := program.Run()
+	if err != nil {
+		return NewInterface{}, fmt.Errorf("failed to start TUI: %w", err)
+	}
+	result, ok := finalModel.(*newInterfaceCommitModel)
+	if !ok {
+		return NewInterface{}, fmt.Errorf("unexpected TUI result type")
+	}
+	if result.cancelled {
+		return NewInterface{}, fmt.Errorf("cancelled")
+	}
 	return NewInterface{
 		Name:          name,
-		Description:   "TODO",
-		RevisionNotes: "TODO",
+		Description:   strings.TrimSpace(result.descriptionInput.Value()),
+		RevisionNotes: strings.TrimSpace(result.notesInput.Value()),
 		Type:          client.OPENAPI,
 	}, nil
 }
@@ -35,10 +49,457 @@ type NewRevision struct {
 	Notes string
 }
 
-func PromptNewRevisionCommit(ctx context.Context) (NewRevision, error) {
+func PromptNewRevisionCommit(ctx context.Context, name string) (NewRevision, error) {
+	_ = ctx
+	model := newNewRevisionCommitModel(name)
+	program := tea.NewProgram(model)
+	finalModel, err := program.Run()
+	if err != nil {
+		return NewRevision{}, fmt.Errorf("failed to start TUI: %w", err)
+	}
+	result, ok := finalModel.(*newRevisionCommitModel)
+	if !ok {
+		return NewRevision{}, fmt.Errorf("unexpected TUI result type")
+	}
+	if result.cancelled {
+		return NewRevision{}, fmt.Errorf("cancelled")
+	}
 	return NewRevision{
-		Notes: "TODO",
+		Notes: strings.TrimSpace(result.notesInput.Value()),
 	}, nil
+}
+
+type InterfaceOwnerOption struct {
+	ID    string // user or org ID for CreateInterfaceRequest.Owner
+	Label string // shown in the list
+	Kind  string // "user" or "org" for display help
+}
+
+func PromptInterfaceOwner(ctx context.Context, interfaceName string, options []InterfaceOwnerOption) (InterfaceOwnerOption, error) {
+	_ = ctx
+	if len(options) == 0 {
+		return InterfaceOwnerOption{}, fmt.Errorf("no owner options available")
+	}
+	model := newInterfaceOwnerModel(interfaceName, options)
+	program := tea.NewProgram(model)
+	finalModel, err := program.Run()
+	if err != nil {
+		return InterfaceOwnerOption{}, fmt.Errorf("failed to start TUI: %w", err)
+	}
+	result, ok := finalModel.(*interfaceOwnerModel)
+	if !ok {
+		return InterfaceOwnerOption{}, fmt.Errorf("unexpected TUI result type")
+	}
+	if result.cancelled {
+		return InterfaceOwnerOption{}, fmt.Errorf("cancelled")
+	}
+	return result.options[result.cursor], nil
+}
+
+type interfaceOwnerStep int
+
+const (
+	ownerStepSelect interfaceOwnerStep = iota
+	ownerStepConfirm
+)
+
+type interfaceOwnerModel struct {
+	interfaceName string
+	options       []InterfaceOwnerOption
+	cursor        int
+	step          interfaceOwnerStep
+	cancelled     bool
+}
+
+func newInterfaceOwnerModel(interfaceName string, options []InterfaceOwnerOption) *interfaceOwnerModel {
+	return &interfaceOwnerModel{
+		interfaceName: interfaceName,
+		options:       options,
+		cursor:        0,
+		step:          ownerStepSelect,
+	}
+}
+
+func (m *interfaceOwnerModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m *interfaceOwnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			m.cancelled = true
+			return m, tea.Quit
+		case "q":
+			if m.step == ownerStepConfirm {
+				m.cancelled = true
+				return m, tea.Quit
+			}
+		case "esc":
+			if m.step > ownerStepSelect {
+				m.step--
+				return m, nil
+			}
+		}
+	}
+
+	switch m.step {
+	case ownerStepSelect:
+		return m.updateSelect(msg)
+	case ownerStepConfirm:
+		return m.updateConfirm(msg)
+	default:
+		return m, nil
+	}
+}
+
+func (m *interfaceOwnerModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.options)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.step = ownerStepConfirm
+		case "q":
+			m.cancelled = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m *interfaceOwnerModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			return m, tea.Quit
+		case "backspace":
+			m.step = ownerStepSelect
+		}
+	}
+	return m, nil
+}
+
+func (m *interfaceOwnerModel) View() string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Choose owner for interface: %s\n\n", m.interfaceName)
+
+	switch m.step {
+	case ownerStepSelect:
+		fmt.Fprintf(&builder, "Select owner:\n\n")
+		for i, option := range m.options {
+			cursor := " "
+			if i == m.cursor {
+				cursor = ">"
+			}
+			check := " "
+			if i == m.cursor {
+				check = "x"
+			}
+			kind := option.Kind
+			if kind == "" {
+				kind = "owner"
+			}
+			fmt.Fprintf(&builder, "%s [%s] %s (%s)\n", cursor, check, option.Label, kind)
+		}
+		fmt.Fprintf(&builder, "\nUse ↑/↓ and press Enter to continue. Press q to cancel.")
+	case ownerStepConfirm:
+		selected := m.options[m.cursor]
+		fmt.Fprintf(&builder, "Confirm owner:\n\n")
+		fmt.Fprintf(&builder, "Interface: %s\n", m.interfaceName)
+		fmt.Fprintf(&builder, "Owner: %s (%s)\n", selected.Label, selected.Kind)
+		fmt.Fprintf(&builder, "\nPress Enter to submit, Backspace to edit, or q to cancel.")
+	}
+
+	return builder.String()
+}
+
+type newInterfaceCommitStep int
+
+const (
+	newIfcCommitStepDescription newInterfaceCommitStep = iota
+	newIfcCommitStepNotes
+	newIfcCommitStepConfirm
+)
+
+type newInterfaceCommitModel struct {
+	name             string
+	step             newInterfaceCommitStep
+	descriptionInput textinput.Model
+	notesInput       textinput.Model
+	cancelled        bool
+}
+
+func newNewInterfaceCommitModel(name string) *newInterfaceCommitModel {
+	descriptionInput := textinput.New()
+	descriptionInput.Placeholder = "Optional description"
+	descriptionInput.Prompt = "> "
+	descriptionInput.CharLimit = 280
+	descriptionInput.Width = 60
+	descriptionInput.Focus()
+
+	notesInput := textinput.New()
+	notesInput.Placeholder = "Optional revision notes"
+	notesInput.Prompt = "> "
+	notesInput.CharLimit = 280
+	notesInput.Width = 60
+
+	return &newInterfaceCommitModel{
+		name:             name,
+		step:             newIfcCommitStepDescription,
+		descriptionInput: descriptionInput,
+		notesInput:       notesInput,
+	}
+}
+
+func (m *newInterfaceCommitModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m *newInterfaceCommitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			m.cancelled = true
+			return m, tea.Quit
+		case "q":
+			// Only cancel on confirm so "q" can be typed in text fields.
+			if m.step == newIfcCommitStepConfirm {
+				m.cancelled = true
+				return m, tea.Quit
+			}
+		case "esc":
+			if m.step > newIfcCommitStepDescription {
+				m.step--
+				m.applyFocus()
+				return m, nil
+			}
+		}
+	}
+
+	switch m.step {
+	case newIfcCommitStepDescription:
+		return m.updateDescription(msg)
+	case newIfcCommitStepNotes:
+		return m.updateNotes(msg)
+	case newIfcCommitStepConfirm:
+		return m.updateConfirm(msg)
+	default:
+		return m, nil
+	}
+}
+
+func (m *newInterfaceCommitModel) updateDescription(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
+		m.step = newIfcCommitStepNotes
+		m.applyFocus()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.descriptionInput, cmd = m.descriptionInput.Update(msg)
+	return m, cmd
+}
+
+func (m *newInterfaceCommitModel) updateNotes(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
+		m.step = newIfcCommitStepConfirm
+		m.applyFocus()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.notesInput, cmd = m.notesInput.Update(msg)
+	return m, cmd
+}
+
+func (m *newInterfaceCommitModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			return m, tea.Quit
+		case "backspace":
+			m.step = newIfcCommitStepNotes
+			m.applyFocus()
+		}
+	}
+	return m, nil
+}
+
+func (m *newInterfaceCommitModel) applyFocus() {
+	switch m.step {
+	case newIfcCommitStepDescription:
+		m.descriptionInput.Focus()
+		m.notesInput.Blur()
+	case newIfcCommitStepNotes:
+		m.descriptionInput.Blur()
+		m.notesInput.Focus()
+	default:
+		m.descriptionInput.Blur()
+		m.notesInput.Blur()
+	}
+}
+
+func (m *newInterfaceCommitModel) View() string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Commit new interface: %s\n\n", m.name)
+
+	switch m.step {
+	case newIfcCommitStepDescription:
+		fmt.Fprintf(&builder, "Description (optional):\n\n")
+		fmt.Fprint(&builder, m.descriptionInput.View())
+		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+	case newIfcCommitStepNotes:
+		fmt.Fprintf(&builder, "Initial revision notes (optional):\n\n")
+		fmt.Fprint(&builder, m.notesInput.View())
+		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+	case newIfcCommitStepConfirm:
+		description := strings.TrimSpace(m.descriptionInput.Value())
+		if description == "" {
+			description = "(none)"
+		}
+		notes := strings.TrimSpace(m.notesInput.Value())
+		if notes == "" {
+			notes = "(none)"
+		}
+		fmt.Fprintf(&builder, "Confirm details:\n\n")
+		fmt.Fprintf(&builder, "Name: %s\n", m.name)
+		fmt.Fprintf(&builder, "Description: %s\n", description)
+		fmt.Fprintf(&builder, "Revision notes: %s\n", notes)
+		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit.")
+	}
+
+	return builder.String()
+}
+
+type newRevisionCommitStep int
+
+const (
+	newRevCommitStepNotes newRevisionCommitStep = iota
+	newRevCommitStepConfirm
+)
+
+type newRevisionCommitModel struct {
+	name       string
+	step       newRevisionCommitStep
+	notesInput textinput.Model
+	cancelled  bool
+}
+
+func newNewRevisionCommitModel(name string) *newRevisionCommitModel {
+	notesInput := textinput.New()
+	notesInput.Placeholder = "Optional revision notes"
+	notesInput.Prompt = "> "
+	notesInput.CharLimit = 280
+	notesInput.Width = 60
+	notesInput.Focus()
+
+	return &newRevisionCommitModel{
+		name:       name,
+		step:       newRevCommitStepNotes,
+		notesInput: notesInput,
+	}
+}
+
+func (m *newRevisionCommitModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m *newRevisionCommitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			m.cancelled = true
+			return m, tea.Quit
+		case "q":
+			// Only cancel on confirm so "q" can be typed in text fields.
+			if m.step == newRevCommitStepConfirm {
+				m.cancelled = true
+				return m, tea.Quit
+			}
+		case "esc":
+			if m.step > newRevCommitStepNotes {
+				m.step--
+				m.applyFocus()
+				return m, nil
+			}
+		}
+	}
+
+	switch m.step {
+	case newRevCommitStepNotes:
+		return m.updateNotes(msg)
+	case newRevCommitStepConfirm:
+		return m.updateConfirm(msg)
+	default:
+		return m, nil
+	}
+}
+
+func (m *newRevisionCommitModel) updateNotes(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
+		m.step = newRevCommitStepConfirm
+		m.applyFocus()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.notesInput, cmd = m.notesInput.Update(msg)
+	return m, cmd
+}
+
+func (m *newRevisionCommitModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			return m, tea.Quit
+		case "backspace":
+			m.step = newRevCommitStepNotes
+			m.applyFocus()
+		}
+	}
+	return m, nil
+}
+
+func (m *newRevisionCommitModel) applyFocus() {
+	if m.step == newRevCommitStepNotes {
+		m.notesInput.Focus()
+	} else {
+		m.notesInput.Blur()
+	}
+}
+
+func (m *newRevisionCommitModel) View() string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Commit new revision: %s\n\n", m.name)
+
+	switch m.step {
+	case newRevCommitStepNotes:
+		fmt.Fprintf(&builder, "Revision notes for %s (optional):\n\n", m.name)
+		fmt.Fprint(&builder, m.notesInput.View())
+		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+	case newRevCommitStepConfirm:
+		notes := strings.TrimSpace(m.notesInput.Value())
+		if notes == "" {
+			notes = "(none)"
+		}
+		fmt.Fprintf(&builder, "Confirm details:\n\n")
+		fmt.Fprintf(&builder, "Interface: %s\n", m.name)
+		fmt.Fprintf(&builder, "Notes: %s\n", notes)
+		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit.")
+	}
+
+	return builder.String()
 }
 
 type InterfaceChange struct {

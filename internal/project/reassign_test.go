@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ifc7/ifc/internal/client"
 	"github.com/ifc7/ifc/internal/pkg/testutils"
+	"github.com/ifc7/ifc/internal/tui"
 )
 
 const testChecksum = "dcdf2064abc0000000000000000000000000000000000000000000000000abcd"
@@ -172,6 +174,42 @@ func TestManifest_upsertRevision_syncsCreatedAt(t *testing.T) {
 	}
 }
 
+func stubInterfaceOwnerPrompt(t *testing.T, owner tui.InterfaceOwnerOption) {
+	t.Helper()
+	orig := promptInterfaceOwner
+	promptInterfaceOwner = func(ctx context.Context, interfaceName string, options []tui.InterfaceOwnerOption) (tui.InterfaceOwnerOption, error) {
+		return owner, nil
+	}
+	t.Cleanup(func() {
+		promptInterfaceOwner = orig
+	})
+}
+
+func expectCurrentUser(mock *client.MockClientWithResponsesIfc) {
+	mock.EXPECT().
+		GetCurrentUserWithResponse(gomock.Any()).
+		Return(&client.GetCurrentUserResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200: &client.User{
+				Id:   testUserID,
+				Name: "test-user",
+				Slug: "test-user",
+			},
+		}, nil).
+		AnyTimes()
+}
+
+func expectListOrganizations(mock *client.MockClientWithResponsesIfc, orgs []client.Organization) {
+	orgsCopy := orgs
+	mock.EXPECT().
+		ListOrganizationsWithResponse(gomock.Any()).
+		Return(&client.ListOrganizationsResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      &orgsCopy,
+		}, nil).
+		AnyTimes()
+}
+
 func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	const (
 		newIfcID = "interface_01kn3ma93qe59r0p8kw6821y2n"
@@ -185,15 +223,27 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	// Drop the release so we don't need to mock release creation.
 	mft.Interfaces["ifc7-rest"].Releases = map[string]*client.InterfaceRelease{}
 
+	stubInterfaceOwnerPrompt(t, tui.InterfaceOwnerOption{
+		ID:    string(testUserID),
+		Label: "You (test-user)",
+		Kind:  "user",
+	})
+
 	proj, err := projectWithMockClient(t, cfg, mft, func(mock *client.MockClientWithResponsesIfc) {
-		expectCurrentUserID(mock)
+		expectCurrentUser(mock)
+		expectListOrganizations(mock, nil)
 		mock.EXPECT().
-			CreateInterfaceWithResponse(gomock.Any(), gomock.Any()).
+			CreateInterfaceWithResponse(gomock.Any(), client.CreateInterfaceRequest{
+				Description: testutils.Ptr("a test interface"),
+				Name:        "ifc7-rest",
+				Type:        client.OPENAPI,
+				Owner:       client.InterfaceOwner(testUserID),
+				IsPublic:    true,
+			}).
 			Return(&client.CreateInterfaceResponse{
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
 				JSON201:      &client.InterfaceDescriptor{Id: newIfcID},
-			}, nil).
-			AnyTimes()
+			}, nil)
 		mock.EXPECT().
 			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(newIfcID)), gomock.Any()).
 			Return(&client.CreateInterfaceRevisionResponse{
@@ -202,8 +252,7 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 					Id:        newRevID,
 					CreatedAt: serverCreatedAt,
 				},
-			}, nil).
-			AnyTimes()
+			}, nil)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -241,5 +290,68 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("owned interface ref not updated to %q: %+v", newIfcID, proj.config.Own)
+	}
+}
+
+func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
+	const (
+		newIfcID = "interface_01kn3orgowner000000000000"
+		newRevID = "revision_01kn3orgowner000000000000"
+		orgID    = "org_01kn3test000000000000000000"
+	)
+	serverCreatedAt := time.Date(2026, time.June, 12, 14, 54, 56, 58598000, time.UTC)
+	cfg := Config{
+		Own: []Owned{{Name: "ifc7-rest", Ref: "", Path: testApiPath}},
+	}
+	mft := *committedManifest("ifc7-rest")
+	mft.Interfaces["ifc7-rest"].Releases = map[string]*client.InterfaceRelease{}
+
+	stubInterfaceOwnerPrompt(t, tui.InterfaceOwnerOption{
+		ID:    orgID,
+		Label: "Acme Corp",
+		Kind:  "org",
+	})
+
+	proj, err := projectWithMockClient(t, cfg, mft, func(mock *client.MockClientWithResponsesIfc) {
+		expectCurrentUser(mock)
+		expectListOrganizations(mock, []client.Organization{
+			{Id: orgID, Name: "Acme Corp", Slug: "acme"},
+		})
+		mock.EXPECT().
+			CreateInterfaceWithResponse(gomock.Any(), client.CreateInterfaceRequest{
+				Description: testutils.Ptr("a test interface"),
+				Name:        "ifc7-rest",
+				Type:        client.OPENAPI,
+				Owner:       client.InterfaceOwner(orgID),
+				IsPublic:    true,
+			}).
+			Return(&client.CreateInterfaceResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201:      &client.InterfaceDescriptor{Id: newIfcID},
+			}, nil)
+		mock.EXPECT().
+			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(newIfcID)), gomock.Any()).
+			Return(&client.CreateInterfaceRevisionResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &client.InterfaceRevisionDescriptor{
+					Id:        newRevID,
+					CreatedAt: serverCreatedAt,
+				},
+			}, nil)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := proj.Push(t.Context(), PushParams{}); err != nil {
+		t.Fatalf("Push returned error: %v", err)
+	}
+
+	ifc, ok := proj.manifest.Interfaces[newIfcID]
+	if !ok {
+		t.Fatalf("interface not re-keyed to %q", newIfcID)
+	}
+	if ifc.Id != newIfcID {
+		t.Fatalf("interface Id = %q, want %q", ifc.Id, newIfcID)
 	}
 }
