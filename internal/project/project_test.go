@@ -149,24 +149,45 @@ func TestProject_Use(t *testing.T) {
 			config:   Config{},
 			manifest: mustParseManifest(t, testManifestBytes),
 			useParams: UseParams{
-				Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
+				Ref: "ifc7.dev/i/interface7/rest-api",
 			},
 			expConfig: Config{
 				Use: []Used{
 					{
-						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/i/interface7/rest-api",
 					},
 				},
 			},
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
+			},
+		},
+		"interface id resolves to canonical path": {
+			config:   Config{},
+			manifest: mustParseManifest(t, testManifestBytes),
+			useParams: UseParams{
+				Ref: "interface_01kn3ma93qe59r0p8kw6821y2n",
+			},
+			expConfig: Config{
+				Use: []Used{
+					{
+						Ref: "ifc7.dev/i/interface7/rest-api",
+					},
+				},
+			},
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				mock.EXPECT().
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200: &client.Interface{
+							Id:           "interface_01kn3ma93qe59r0p8kw6821y2n",
+							CanonicalUrl: "/i/interface7/rest-api",
+						},
+					}, nil)
 			},
 		},
 		"invalid ref - bad format": {
@@ -181,23 +202,19 @@ func TestProject_Use(t *testing.T) {
 			config: Config{
 				Use: []Used{
 					{
-						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/i/interface7/rest-api",
 					},
 				},
 			},
 			manifest: mustParseManifest(t, testManifestBytes),
 			useParams: UseParams{
-				Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
+				Ref: "ifc7.dev/i/interface7/rest-api",
 			},
 			expErr: ErrRefExists,
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
 			},
 		},
@@ -305,7 +322,7 @@ func TestProject_Fetch(t *testing.T) {
 			config: Config{
 				Use: []Used{
 					{
-						Ref: "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref: "ifc7.dev/i/interface7/rest-api",
 					},
 				},
 			},
@@ -314,13 +331,8 @@ func TestProject_Fetch(t *testing.T) {
 			expManifest: mustParseManifest(t, testManifestBytes),
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestInterface,
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
 				mock.EXPECT().
 					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
@@ -417,7 +429,7 @@ func TestProject_Commit(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "ifc7-rest",
-						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/i/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},
@@ -427,13 +439,8 @@ func TestProject_Commit(t *testing.T) {
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				expectCurrentUserID(mock)
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestInterface,
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
 				mock.EXPECT().
 					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
@@ -499,7 +506,7 @@ func TestProject_Push(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "ifc7-rest",
-						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/i/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},
@@ -509,13 +516,8 @@ func TestProject_Push(t *testing.T) {
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				expectCurrentUserID(mock)
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestInterface,
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
 				mock.EXPECT().
 					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
@@ -569,7 +571,7 @@ func TestProject_Push(t *testing.T) {
 				Own: []Owned{
 					{
 						Name: "missing",
-						Ref:  "ifc7.dev/api/v0/i/o/interface7/rest-api",
+						Ref:  "ifc7.dev/i/interface7/rest-api",
 						Path: testApiPath,
 					},
 				},
@@ -577,13 +579,8 @@ func TestProject_Push(t *testing.T) {
 			manifest: Manifest{},
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
 				mock.EXPECT().
-					GetInterfaceByPathWithResponse(gomock.Any(), gomock.Eq(client.GetInterfaceByPathParamsOwnerScope("o")), gomock.Eq("interface7"), gomock.Eq("rest-api"), gomock.Any()).
-					Return(&client.GetInterfaceByPathResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestInterface,
-					}, nil).
+					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
 					AnyTimes()
 			},
 		},

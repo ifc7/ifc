@@ -36,24 +36,6 @@ const (
 	Yaml SpecificationFileFormat = "yaml"
 )
 
-// Defines values for Format.
-const (
-	FormatHtml Format = "html"
-	FormatRaw  Format = "raw"
-)
-
-// Defines values for GetInterfaceByPathParamsFormat.
-const (
-	GetInterfaceByPathParamsFormatHtml GetInterfaceByPathParamsFormat = "html"
-	GetInterfaceByPathParamsFormatRaw  GetInterfaceByPathParamsFormat = "raw"
-)
-
-// Defines values for GetInterfaceByPathParamsOwnerScope.
-const (
-	O GetInterfaceByPathParamsOwnerScope = "o"
-	U GetInterfaceByPathParamsOwnerScope = "u"
-)
-
 // AddOrganizationMemberRequest Properties for adding a user to an organization
 type AddOrganizationMemberRequest struct {
 	// Role Role of the user within the organization; determines permissions on org-scoped resources
@@ -128,6 +110,10 @@ type Error struct {
 
 // Interface A specification for a particular interface
 type Interface struct {
+	// CanonicalUrl Canonical locator path for this interface. Organization-owned interfaces use
+	// `/i/{orgSlug}/{interfaceSlug}`; user-owned interfaces use `/i/@{userSlug}/{interfaceSlug}`.
+	CanonicalUrl string `json:"canonicalUrl,omitempty"`
+
 	// CreatedAt The time the interface was created
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -164,6 +150,10 @@ type Interface struct {
 
 // InterfaceDescriptor A lightweight descriptor for a particular interface, does not include the full revision specification
 type InterfaceDescriptor struct {
+	// CanonicalUrl Canonical locator path for this interface. Organization-owned interfaces use
+	// `/i/{orgSlug}/{interfaceSlug}`; user-owned interfaces use `/i/@{userSlug}/{interfaceSlug}`.
+	CanonicalUrl string `json:"canonicalUrl,omitempty"`
+
 	// CreatedAt The time the interface was created
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -352,9 +342,6 @@ type User struct {
 // UserId TypeID for the user
 type UserId = string
 
-// Format defines model for Format.
-type Format string
-
 // BadRequestError Error response
 type BadRequestError = Error
 
@@ -369,18 +356,6 @@ type NotFoundError = Error
 
 // UnauthorizedError Error response
 type UnauthorizedError = Error
-
-// GetInterfaceByPathParams defines parameters for GetInterfaceByPath.
-type GetInterfaceByPathParams struct {
-	// Format Response format. When omitted, returns the interface descriptor as JSON. Use `raw` for the raw interface specification, or `html` for HTML documentation.
-	Format *GetInterfaceByPathParamsFormat `form:"format,omitempty" json:"format,omitempty"`
-}
-
-// GetInterfaceByPathParamsFormat defines parameters for GetInterfaceByPath.
-type GetInterfaceByPathParamsFormat string
-
-// GetInterfaceByPathParamsOwnerScope defines parameters for GetInterfaceByPath.
-type GetInterfaceByPathParamsOwnerScope string
 
 // ListInterfacesParams defines parameters for ListInterfaces.
 type ListInterfacesParams struct {
@@ -488,9 +463,6 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetInterfaceByPath request
-	GetInterfaceByPath(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListInterfaces request
 	ListInterfaces(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -580,18 +552,6 @@ type ClientInterface interface {
 	UpdateUserWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateUser(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-}
-
-func (c *Client) GetInterfaceByPath(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetInterfaceByPathRequest(c.Server, ownerScope, ownerName, interfaceName, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
 }
 
 func (c *Client) ListInterfaces(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -988,76 +948,6 @@ func (c *Client) UpdateUser(ctx context.Context, userId UserId, body UpdateUserJ
 		return nil, err
 	}
 	return c.Client.Do(req)
-}
-
-// NewGetInterfaceByPathRequest generates requests for GetInterfaceByPath
-func NewGetInterfaceByPathRequest(server string, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "ownerScope", runtime.ParamLocationPath, ownerScope)
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "ownerName", runtime.ParamLocationPath, ownerName)
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "interfaceName", runtime.ParamLocationPath, interfaceName)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/i/%s/%s/%s", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Format != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "format", runtime.ParamLocationQuery, *params.Format); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
 }
 
 // NewListInterfacesRequest generates requests for ListInterfaces
@@ -2065,9 +1955,6 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetInterfaceByPathWithResponse request
-	GetInterfaceByPathWithResponse(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*GetInterfaceByPathResponse, error)
-
 	// ListInterfacesWithResponse request
 	ListInterfacesWithResponse(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error)
 
@@ -2157,32 +2044,6 @@ type ClientWithResponsesInterface interface {
 	UpdateUserWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
 
 	UpdateUserWithResponse(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
-}
-
-type GetInterfaceByPathResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *Interface
-	JSON400      *BadRequestError
-	JSON401      *UnauthorizedError
-	JSON403      *ForbiddenError
-	JSON404      *NotFoundError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetInterfaceByPathResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetInterfaceByPathResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
 }
 
 type ListInterfacesResponse struct {
@@ -2802,15 +2663,6 @@ func (r UpdateUserResponse) StatusCode() int {
 	return 0
 }
 
-// GetInterfaceByPathWithResponse request returning *GetInterfaceByPathResponse
-func (c *ClientWithResponses) GetInterfaceByPathWithResponse(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*GetInterfaceByPathResponse, error) {
-	rsp, err := c.GetInterfaceByPath(ctx, ownerScope, ownerName, interfaceName, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetInterfaceByPathResponse(rsp)
-}
-
 // ListInterfacesWithResponse request returning *ListInterfacesResponse
 func (c *ClientWithResponses) ListInterfacesWithResponse(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error) {
 	rsp, err := c.ListInterfaces(ctx, params, reqEditors...)
@@ -3097,63 +2949,6 @@ func (c *ClientWithResponses) UpdateUserWithResponse(ctx context.Context, userId
 		return nil, err
 	}
 	return ParseUpdateUserResponse(rsp)
-}
-
-// ParseGetInterfaceByPathResponse parses an HTTP response from a GetInterfaceByPathWithResponse call
-func ParseGetInterfaceByPathResponse(rsp *http.Response) (*GetInterfaceByPathResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetInterfaceByPathResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Interface
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest UnauthorizedError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest ForbiddenError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFoundError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case rsp.StatusCode == 200:
-		// Content-type (text/plain) unsupported
-
-	}
-
-	return response, nil
 }
 
 // ParseListInterfacesResponse parses an HTTP response from a ListInterfacesWithResponse call

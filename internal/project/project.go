@@ -97,6 +97,7 @@ func (p *Project) Initialize() error {
 
 // Write writes project files to disk
 func (p *Project) Write() error {
+	p.rewriteConfigRefsToCanonical()
 	err := p.manifest.Write(internal.IfcManifestPath)
 	if err != nil {
 		return fmt.Errorf("error writing manifest file: %w", err)
@@ -107,6 +108,64 @@ func (p *Project) Write() error {
 	}
 	// TODO: write working copies
 	return nil
+}
+
+// rewriteConfigRefsToCanonical upgrades interface_… ids in ifc.yaml to host-qualified
+// canonical paths when the manifest has CanonicalUrl for that interface.
+func (p *Project) rewriteConfigRefsToCanonical() {
+	for i, u := range p.config.Use {
+		if ref, ok := p.canonicalConfigRefFor(u.Ref); ok {
+			p.config.Use[i].Ref = ref
+		}
+	}
+	for i, o := range p.config.Own {
+		if o.Ref == "" {
+			continue
+		}
+		if ref, ok := p.canonicalConfigRefFor(o.Ref); ok {
+			p.config.Own[i].Ref = ref
+		}
+	}
+}
+
+// canonicalConfigRefFor returns the preferred ifc.yaml ref form for ref when known.
+func (p *Project) canonicalConfigRefFor(ref string) (string, bool) {
+	if ref == "" {
+		return "", false
+	}
+	if parsed, ok := parsePathRef(ref); ok {
+		return parsed.canonical(), true
+	}
+	if !strings.HasPrefix(ref, "interface_") {
+		return "", false
+	}
+	ifc, ok := p.manifest.Interfaces[ref]
+	if !ok || ifc.CanonicalUrl == "" {
+		return "", false
+	}
+	cfgRef, err := configRefFromCanonicalURL(ifc.CanonicalUrl)
+	if err != nil {
+		return "", false
+	}
+	return cfgRef, true
+}
+
+// configRefFromCanonicalURL turns an API canonicalUrl (/i/{owner}/{slug}) into the
+// host-qualified form stored in ifc.yaml (e.g. ifc7.dev/i/acme/petstore).
+func configRefFromCanonicalURL(canonicalURL string) (string, error) {
+	path := strings.TrimSpace(canonicalURL)
+	if path == "" {
+		return "", fmt.Errorf("empty canonicalUrl")
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	ref := internal.DefaultAPIHost + path
+	parsed, ok := parsePathRef(ref)
+	if !ok {
+		return "", fmt.Errorf("invalid canonicalUrl %q", canonicalURL)
+	}
+	return parsed.canonical(), nil
 }
 
 // UseParams holds parameters that can be passed to the Use method
@@ -233,19 +292,15 @@ func (p *Project) Push(ctx context.Context, params PushParams) ([]string, error)
 
 // resolveRef verifies the existence of an interface reference and returns a canonical version
 func (p *Project) resolveRef(ctx context.Context, ref string) (string, error) {
-	if strings.HasPrefix(ref, internal.DefaultAPIHost) {
-		scope, owner, name, err := splitRef(ref)
-		if err != nil {
-			return "", fmt.Errorf("%w: error parsing ref %s: %w", ErrInvalidRef, ref, err)
-		}
-		response, err := p.client.GetInterfaceByPathWithResponse(ctx, client.GetInterfaceByPathParamsOwnerScope(scope), owner, name, &client.GetInterfaceByPathParams{})
+	if parsed, ok := parsePathRef(ref); ok {
+		_, status, err := p.client.GetInterfaceByCanonicalPathWithResponse(ctx, parsed.host, parsed.ownerPath(), parsed.name)
 		if err != nil {
 			return "", fmt.Errorf("%w: error fetching interface %s: %w", ErrInvalidRef, ref, err)
 		}
-		if response.StatusCode() != http.StatusOK {
-			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, response.StatusCode())
+		if status != http.StatusOK {
+			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, status)
 		}
-		return ref, nil
+		return parsed.canonical(), nil
 	}
 	if strings.HasPrefix(ref, "interface_") {
 		i, err := p.client.GetInterfaceWithResponse(ctx, ref)
@@ -255,29 +310,32 @@ func (p *Project) resolveRef(ctx context.Context, ref string) (string, error) {
 		if i.StatusCode() != http.StatusOK {
 			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, i.StatusCode())
 		}
-		return ref, nil
+		if i.JSON200 == nil {
+			return "", fmt.Errorf("%w: error fetching interface %s: unexpected response body", ErrInvalidRef, ref)
+		}
+		cfgRef, err := configRefFromCanonicalURL(i.JSON200.CanonicalUrl)
+		if err != nil {
+			return "", fmt.Errorf("%w: interface %s missing canonicalUrl: %w", ErrInvalidRef, ref, err)
+		}
+		return cfgRef, nil
 	}
 	return "", ErrInvalidRef
 }
 
 // resolveRefToID resolves a reference returning the associated interface ID
 func (p *Project) resolveRefToID(ctx context.Context, ref string) (client.InterfaceId, error) {
-	if strings.HasPrefix(ref, internal.DefaultAPIHost) {
-		scope, owner, name, err := splitRef(ref)
-		if err != nil {
-			return "", fmt.Errorf("%w: error parsing ref %s: %w", ErrInvalidRef, ref, err)
-		}
-		response, err := p.client.GetInterfaceByPathWithResponse(ctx, client.GetInterfaceByPathParamsOwnerScope(scope), owner, name, &client.GetInterfaceByPathParams{})
+	if parsed, ok := parsePathRef(ref); ok {
+		meta, status, err := p.client.GetInterfaceByCanonicalPathWithResponse(ctx, parsed.host, parsed.ownerPath(), parsed.name)
 		if err != nil {
 			return "", fmt.Errorf("%w: error fetching interface %s: %w", ErrInvalidRef, ref, err)
 		}
-		if response.StatusCode() != http.StatusOK {
-			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, response.StatusCode())
+		if status != http.StatusOK {
+			return "", fmt.Errorf("%w: error fetching interface %s: HTTP %d", ErrInvalidRef, ref, status)
 		}
-		if response.JSON200 == nil {
+		if meta == nil || meta.Id == "" {
 			return "", fmt.Errorf("%w: error fetching interface %s: response body is nil", ErrInvalidRef, ref)
 		}
-		return response.JSON200.Id, nil
+		return meta.Id, nil
 	}
 	if strings.HasPrefix(ref, "interface_") {
 		response, err := p.client.GetInterfaceWithResponse(ctx, ref)
@@ -555,14 +613,21 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			return nil, fmt.Errorf("error creating interface %s: unexpected response body", own.Name)
 		}
 		interfaceId := response.JSON201.Id
-		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, interfaceId))
+		cfgRef, err := configRefFromCanonicalURL(response.JSON201.CanonicalUrl)
+		if err != nil {
+			return messages, fmt.Errorf("created interface %s missing canonicalUrl: %w", interfaceId, err)
+		}
+		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, cfgRef))
 		// Replace the temporary manifest key (the interface name) with the
 		// server-assigned interface ID everywhere in the manifest.
 		if err := p.manifest.reassignInterfaceID(interfaceID, interfaceId); err != nil {
 			return messages, fmt.Errorf("error updating interface ID in manifest: %w", err)
 		}
-		// Record the new ref so future commits and pushes resolve to this interface.
-		if err := p.config.updateOwnedInterfaceRef(own.Name, interfaceId); err != nil {
+		if created := p.manifest.Interfaces[interfaceId]; created != nil {
+			created.CanonicalUrl = response.JSON201.CanonicalUrl
+		}
+		// Record the canonical ref so future commits and pushes resolve to this interface.
+		if err := p.config.updateOwnedInterfaceRef(own.Name, cfgRef); err != nil {
 			return messages, fmt.Errorf("error updating owned interface ref: %w", err)
 		}
 		revKeys := slices.Collect(maps.Keys(manifestEntry.Revisions))
@@ -728,18 +793,72 @@ func (p *Project) recordPushedRevision(ifcID client.InterfaceId, revKey string, 
 	return nil
 }
 
-// splitRef splits an interface reference into its scope, owner, and name components
-func splitRef(ref string) (scope string, owner string, name string, err error) {
-	prefix := internal.DefaultAPIHost + "/api/v0/i/"
-	rem, ok := strings.CutPrefix(ref, prefix)
+// pathRef is a parsed owner-path interface reference.
+type pathRef struct {
+	host      string
+	ownerSeg  string // "@user" or "org-slug" as it appears in the URL
+	name      string
+	ver       string // optional vX.Y.Z
+}
+
+func (p pathRef) ownerPath() string { return p.ownerSeg }
+
+func (p pathRef) canonical() string {
+	path := p.host + "/i/" + p.ownerSeg + "/" + p.name
+	if p.ver != "" {
+		path += "/" + p.ver
+	}
+	return path
+}
+
+var knownAPIHosts = []string{
+	internal.DefaultAPIHost,
+	"staging.ifc7.dev",
+	"dev.ifc7.dev",
+	"localhost",
+	"localhost:8080",
+}
+
+// parsePathRef parses canonical /i/{owner}/{name}[/version] refs.
+func parsePathRef(ref string) (pathRef, bool) {
+	ref = strings.TrimPrefix(ref, "https://")
+	ref = strings.TrimPrefix(ref, "http://")
+	for _, host := range knownAPIHosts {
+		if parsed, ok := parsePathRefWithHost(ref, host); ok {
+			return parsed, true
+		}
+	}
+	return pathRef{}, false
+}
+
+func parsePathRefWithHost(ref, host string) (pathRef, bool) {
+	if !strings.HasPrefix(ref, host+"/") && ref != host {
+		return pathRef{}, false
+	}
+	rem := strings.TrimPrefix(ref, host)
+	rem = strings.TrimPrefix(rem, "/")
+
+	after, ok := strings.CutPrefix(rem, "i/")
 	if !ok {
-		return "", "", "", fmt.Errorf("invalid ref %s: missing prefix %s", ref, prefix)
+		return pathRef{}, false
 	}
-	split := strings.Split(rem, "/")
-	if len(split) != 3 {
-		return "", "", "", fmt.Errorf("invalid ref %s: expected 3 parts, got %d", ref, len(split))
+	parts := strings.Split(after, "/")
+	if len(parts) != 2 && len(parts) != 3 {
+		return pathRef{}, false
 	}
-	return split[0], split[1], split[2], nil
+	ownerSeg := parts[0]
+	if ownerSeg == "" || ownerSeg == "@" {
+		return pathRef{}, false
+	}
+	name := parts[1]
+	if name == "" {
+		return pathRef{}, false
+	}
+	ver := ""
+	if len(parts) == 3 {
+		ver = parts[2]
+	}
+	return pathRef{host: host, ownerSeg: ownerSeg, name: name, ver: ver}, true
 }
 
 // sha256Checksum calculates the SHA256 checksum of a byte slice

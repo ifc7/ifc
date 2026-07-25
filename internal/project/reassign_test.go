@@ -242,7 +242,10 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 			}).
 			Return(&client.CreateInterfaceResponse{
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
-				JSON201:      &client.InterfaceDescriptor{Id: newIfcID},
+				JSON201: &client.InterfaceDescriptor{
+					Id:           newIfcID,
+					CanonicalUrl: "/i/@test-user/ifc7-rest",
+				},
 			}, nil)
 		mock.EXPECT().
 			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(newIfcID)), gomock.Any()).
@@ -281,15 +284,16 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 	if got := ifc.Revisions[newRevID].CreatedAt; !got.Equal(serverCreatedAt) {
 		t.Fatalf("revision CreatedAt = %v, want %v", got, serverCreatedAt)
 	}
-	// The owned config entry should now reference the server interface ID.
+	// The owned config entry should now reference the canonical path.
+	wantRef := "ifc7.dev/i/@test-user/ifc7-rest"
 	found := false
 	for _, o := range proj.config.Own {
-		if o.Name == "ifc7-rest" && o.Ref == newIfcID {
+		if o.Name == "ifc7-rest" && o.Ref == wantRef {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("owned interface ref not updated to %q: %+v", newIfcID, proj.config.Own)
+		t.Fatalf("owned interface ref not updated to %q: %+v", wantRef, proj.config.Own)
 	}
 }
 
@@ -327,7 +331,10 @@ func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
 			}).
 			Return(&client.CreateInterfaceResponse{
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
-				JSON201:      &client.InterfaceDescriptor{Id: newIfcID},
+				JSON201: &client.InterfaceDescriptor{
+					Id:           newIfcID,
+					CanonicalUrl: "/i/acme/ifc7-rest",
+				},
 			}, nil)
 		mock.EXPECT().
 			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(newIfcID)), gomock.Any()).
@@ -353,5 +360,15 @@ func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
 	}
 	if ifc.Id != newIfcID {
 		t.Fatalf("interface Id = %q, want %q", ifc.Id, newIfcID)
+	}
+	wantRef := "ifc7.dev/i/acme/ifc7-rest"
+	found := false
+	for _, o := range proj.config.Own {
+		if o.Name == "ifc7-rest" && o.Ref == wantRef {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("owned interface ref not updated to %q: %+v", wantRef, proj.config.Own)
 	}
 }

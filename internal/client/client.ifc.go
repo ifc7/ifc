@@ -6,7 +6,7 @@ import (
 )
 
 type ClientWithResponsesIfc interface {
-	GetInterfaceByPathWithResponse(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName string, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*GetInterfaceByPathResponse, error)
+	GetInterfaceByCanonicalPathWithResponse(ctx context.Context, host, ownerPath, name string, reqEditors ...RequestEditorFn) (*CanonicalInterfaceMeta, int, error)
 	ListInterfacesWithResponse(ctx context.Context, params *ListInterfacesParams, reqEditors ...RequestEditorFn) (*ListInterfacesResponse, error)
 	CreateInterfaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInterfaceResponse, error)
 	CreateInterfaceWithResponse(ctx context.Context, body CreateInterfaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInterfaceResponse, error)
