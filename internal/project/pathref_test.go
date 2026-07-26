@@ -12,6 +12,9 @@ func TestConfigRefFromCanonicalURL(t *testing.T) {
 		{in: "/i/acme/payments", want: "ifc7.dev/i/acme/payments"},
 		{in: "/i/@shaun/my-api", want: "ifc7.dev/i/@shaun/my-api"},
 		{in: "i/acme/payments", want: "ifc7.dev/i/acme/payments"},
+		{in: "dev.ifc7.dev/i/acme/payments", want: "dev.ifc7.dev/i/acme/payments"},
+		{in: "https://dev.ifc7.dev/i/acme/payments", want: "dev.ifc7.dev/i/acme/payments"},
+		{in: "https://ifc7.dev/i/@shaun/my-api", want: "ifc7.dev/i/@shaun/my-api"},
 		{in: "", wantErr: true},
 		{in: "/api/v0/interfaces/x", wantErr: true},
 	}

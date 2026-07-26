@@ -53,6 +53,10 @@ Use `ifc --help` for detailed explanations of commands.
 
 `ifc add` - Add a locally owned interface to your project.
 
+`ifc status` - Show whether owned interface files differ from the local manifest.
+
+`ifc scan [path]` - Find untracked OpenAPI / JSON Schema files and add them to the project. Optional path limits the search to a subdirectory.
+
 ## Coming Soon:
 
 `ifc compare` - Compare revisions of an interface for breaking changes.

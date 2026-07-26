@@ -150,13 +150,17 @@ func (p *Project) canonicalConfigRefFor(ref string) (string, bool) {
 	return cfgRef, true
 }
 
-// configRefFromCanonicalURL turns an API canonicalUrl (/i/{owner}/{slug}) into the
-// host-qualified form stored in ifc.yaml (e.g. ifc7.dev/i/acme/petstore).
+// configRefFromCanonicalURL turns an API canonicalUrl into the form stored in
+// ifc.yaml (e.g. ifc7.dev/i/acme/petstore).
 func configRefFromCanonicalURL(canonicalURL string) (string, error) {
-	path := strings.TrimSpace(canonicalURL)
-	if path == "" {
+	s := strings.TrimSpace(canonicalURL)
+	if s == "" {
 		return "", fmt.Errorf("empty canonicalUrl")
 	}
+	if parsed, ok := parsePathRef(s); ok {
+		return parsed.canonical(), nil
+	}
+	path := s
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -456,7 +460,11 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 	encoded := base64Encode(b)
 	manifestIfc, ok := p.manifest.Interfaces[id]
 	if !ok {
-		newIfc, err := promptNewInterfaceCommit(ctx, own.Name)
+		specType, err := DetectSpecificationType(b)
+		if err != nil {
+			return fmt.Errorf("error detecting interface type for %s: %w", own.Path, err)
+		}
+		newIfc, err := promptNewInterfaceCommit(ctx, own.Name, specType)
 		if err != nil {
 			return fmt.Errorf("error prompting for new interface: %w", err)
 		}
@@ -476,7 +484,7 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 				Description:    &newIfc.Description,
 				LatestRevision: &revision,
 				Name:           newIfc.Name,
-				Type:           newIfc.Type,
+				Type:           specType,
 				Id:             id,
 			},
 			Revisions: map[string]*client.InterfaceRevision{
@@ -795,10 +803,10 @@ func (p *Project) recordPushedRevision(ifcID client.InterfaceId, revKey string, 
 
 // pathRef is a parsed owner-path interface reference.
 type pathRef struct {
-	host      string
-	ownerSeg  string // "@user" or "org-slug" as it appears in the URL
-	name      string
-	ver       string // optional vX.Y.Z
+	host     string
+	ownerSeg string // "@user" or "org-slug" as it appears in the URL
+	name     string
+	ver      string // optional vX.Y.Z
 }
 
 func (p pathRef) ownerPath() string { return p.ownerSeg }

@@ -401,12 +401,12 @@ func TestProject_Fetch(t *testing.T) {
 func TestProject_Commit(t *testing.T) {
 	origNewInterfaceCommit := promptNewInterfaceCommit
 	origNewRevisionCommit := promptNewRevisionCommit
-	promptNewInterfaceCommit = func(ctx context.Context, name string) (tui.NewInterface, error) {
+	promptNewInterfaceCommit = func(ctx context.Context, name string, ifaceType client.InterfaceType) (tui.NewInterface, error) {
 		return tui.NewInterface{
 			Name:          name,
 			Description:   "test description",
 			RevisionNotes: "test revision notes",
-			Type:          client.OPENAPI,
+			Type:          ifaceType,
 		}, nil
 	}
 	promptNewRevisionCommit = func(ctx context.Context, name string) (tui.NewRevision, error) {
