@@ -1,3 +1,8 @@
 use:
-    - ref: interface_01ky8ppsebfectzfwy7bnt0958
+    - ref: ifc7.dev/i/interface-7/plugin-compare-input
+    - ref: ifc7.dev/i/interface-7/plugin-compare-output
+    - ref: ifc7.dev/i/interface-7/plugin-defs
+    - ref: ifc7.dev/i/interface-7/plugin-lint-input
+    - ref: ifc7.dev/i/interface-7/plugin-lint-output
+    - ref: ifc7.dev/i/interface-7/rest-api
 own: []
