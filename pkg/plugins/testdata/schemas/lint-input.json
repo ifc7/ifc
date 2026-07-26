@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/lint-input.json",
+  "title": "Lint plugin input",
+  "description": "Input contract for interface linter plugins.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["interfaceType", "document"],
+  "properties": {
+    "interfaceType": {
+      "$ref": "defs.json#/$defs/InterfaceType"
+    },
+    "document": {
+      "$ref": "defs.json#/$defs/SpecificationDocument",
+      "description": "The interface specification to lint."
+    },
+    "options": {
+      "$ref": "defs.json#/$defs/PluginOptions"
+    }
+  },
+  "examples": [
+    {
+      "interfaceType": "OPENAPI",
+      "document": {
+        "specification": "b3BlbmFwaTogIjMuMC4zIgo=",
+        "fileFormat": "yaml"
+      },
+      "options": {}
+    }
+  ]
+}

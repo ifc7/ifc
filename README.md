@@ -57,9 +57,11 @@ Use `ifc --help` for detailed explanations of commands.
 
 `ifc scan [path]` - Find untracked OpenAPI / JSON Schema files and add them to the project. Optional path limits the search to a subdirectory.
 
-## Coming Soon:
+`ifc lint [name|path]...` - Lint owned interfaces or specification files with the default linter plugin.
 
-`ifc compare` - Compare revisions of an interface for breaking changes.
+`ifc compare <before> <after>` - Compare two specifications for breaking changes with the default change-detector plugin.
+
+## Coming Soon:
 
 `ifc gen` - Generate code from an interface.
 

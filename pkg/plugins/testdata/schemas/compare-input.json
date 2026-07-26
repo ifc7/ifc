@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/compare-input.json",
+  "title": "Compare plugin input",
+  "description": "Input contract for interface change-detector plugins.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["interfaceType", "before", "after"],
+  "properties": {
+    "interfaceType": {
+      "$ref": "defs.json#/$defs/InterfaceType"
+    },
+    "before": {
+      "$ref": "defs.json#/$defs/SpecificationDocument",
+      "description": "Baseline specification."
+    },
+    "after": {
+      "$ref": "defs.json#/$defs/SpecificationDocument",
+      "description": "Candidate specification to compare against the baseline."
+    },
+    "options": {
+      "$ref": "defs.json#/$defs/PluginOptions"
+    }
+  },
+  "examples": [
+    {
+      "interfaceType": "OPENAPI",
+      "before": {
+        "specification": "b3BlbmFwaTogIjMuMC4zIgo=",
+        "fileFormat": "yaml"
+      },
+      "after": {
+        "specification": "b3BlbmFwaTogIjMuMS4wIgo=",
+        "fileFormat": "yaml"
+      },
+      "options": {}
+    }
+  ]
+}
