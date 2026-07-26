@@ -336,24 +336,25 @@ func (mr *MockClientWithResponsesIfcMockRecorder) GetCurrentUserWithResponse(ctx
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentUserWithResponse", reflect.TypeOf((*MockClientWithResponsesIfc)(nil).GetCurrentUserWithResponse), varargs...)
 }
 
-// GetInterfaceByPathWithResponse mocks base method.
-func (m *MockClientWithResponsesIfc) GetInterfaceByPathWithResponse(ctx context.Context, ownerScope GetInterfaceByPathParamsOwnerScope, ownerName, interfaceName string, params *GetInterfaceByPathParams, reqEditors ...RequestEditorFn) (*GetInterfaceByPathResponse, error) {
+// GetInterfaceByCanonicalPathWithResponse mocks base method.
+func (m *MockClientWithResponsesIfc) GetInterfaceByCanonicalPathWithResponse(ctx context.Context, host, ownerPath, name string, reqEditors ...RequestEditorFn) (*CanonicalInterfaceMeta, int, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{ctx, ownerScope, ownerName, interfaceName, params}
+	varargs := []any{ctx, host, ownerPath, name}
 	for _, a := range reqEditors {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "GetInterfaceByPathWithResponse", varargs...)
-	ret0, _ := ret[0].(*GetInterfaceByPathResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "GetInterfaceByCanonicalPathWithResponse", varargs...)
+	ret0, _ := ret[0].(*CanonicalInterfaceMeta)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
-// GetInterfaceByPathWithResponse indicates an expected call of GetInterfaceByPathWithResponse.
-func (mr *MockClientWithResponsesIfcMockRecorder) GetInterfaceByPathWithResponse(ctx, ownerScope, ownerName, interfaceName, params any, reqEditors ...any) *gomock.Call {
+// GetInterfaceByCanonicalPathWithResponse indicates an expected call of GetInterfaceByCanonicalPathWithResponse.
+func (mr *MockClientWithResponsesIfcMockRecorder) GetInterfaceByCanonicalPathWithResponse(ctx, host, ownerPath, name any, reqEditors ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{ctx, ownerScope, ownerName, interfaceName, params}, reqEditors...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInterfaceByPathWithResponse", reflect.TypeOf((*MockClientWithResponsesIfc)(nil).GetInterfaceByPathWithResponse), varargs...)
+	varargs := append([]any{ctx, host, ownerPath, name}, reqEditors...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInterfaceByCanonicalPathWithResponse", reflect.TypeOf((*MockClientWithResponsesIfc)(nil).GetInterfaceByCanonicalPathWithResponse), varargs...)
 }
 
 // GetInterfaceReleaseWithResponse mocks base method.

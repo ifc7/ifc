@@ -213,16 +213,29 @@ func (c *Config) refExists(ref string) (exists bool, owned bool) {
 		return false, false
 	}
 	for _, u := range c.Use {
-		if u.Ref == ref {
+		if refsEquivalent(u.Ref, ref) {
 			return true, false
 		}
 	}
 	for _, o := range c.Own {
-		if o.Ref == ref {
+		if refsEquivalent(o.Ref, ref) {
 			return true, true
 		}
 	}
 	return false, false
+}
+
+// refsEquivalent reports whether two refs name the same interface (legacy and canonical forms).
+func refsEquivalent(a, b string) bool {
+	if a == b {
+		return true
+	}
+	pa, oka := parsePathRef(a)
+	pb, okb := parsePathRef(b)
+	if oka && okb {
+		return pa.canonical() == pb.canonical()
+	}
+	return false
 }
 
 // nameExists checks if a name already exists in the project configuration

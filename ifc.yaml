@@ -1,3 +1,8 @@
 use:
-    - ref: staging.ifc7.dev/api/v0/i/o/interface7/rest-api
+    - ref: ifc7.dev/i/interface-7/plugin-compare-input
+    - ref: ifc7.dev/i/interface-7/plugin-compare-output
+    - ref: ifc7.dev/i/interface-7/plugin-defs
+    - ref: ifc7.dev/i/interface-7/plugin-lint-input
+    - ref: ifc7.dev/i/interface-7/plugin-lint-output
+    - ref: ifc7.dev/i/interface-7/rest-api
 own: []

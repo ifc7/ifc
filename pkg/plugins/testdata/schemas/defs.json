@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/defs.json",
+  "$comment": "Shared definitions for ifc7 plugin input/output contracts (v0).",
+  "title": "Plugin contract shared definitions",
+  "description": "Reusable building blocks for lint and compare plugin schemas.",
+  "$defs": {
+    "InterfaceType": {
+      "type": "string",
+      "description": "Interface type identifier (for example OPENAPI or JSON_SCHEMA). Expand this enum when new types are added.",
+      "enum": ["JSON_SCHEMA", "OPENAPI"],
+      "examples": ["OPENAPI"]
+    },
+    "FileFormat": {
+      "type": "string",
+      "description": "Serialization format of the specification document bytes after base64 decoding.",
+      "enum": ["json", "yaml"],
+      "examples": ["yaml"]
+    },
+    "SpecificationDocument": {
+      "type": "object",
+      "description": "A single interface specification payload.",
+      "additionalProperties": false,
+      "required": ["specification", "fileFormat"],
+      "properties": {
+        "specification": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 1,
+          "description": "Base64-encoded interface specification document."
+        },
+        "fileFormat": {
+          "$ref": "#/$defs/FileFormat"
+        }
+      }
+    },
+    "PluginOptions": {
+      "type": "object",
+      "description": "Optional plugin-specific settings. Unknown keys may be ignored. v0 imposes no required option keys.",
+      "default": {},
+      "additionalProperties": true
+    },
+    "SemanticExtra": {
+      "type": "object",
+      "description": "Optional extensions beyond the required semantic fields. Must not duplicate required semantic fields (score, breaking).",
+      "default": {},
+      "additionalProperties": true
+    },
+    "RawOutput": {
+      "type": "string",
+      "description": "Textual detail for this run. Empty string is allowed when there is nothing to report."
+    }
+  }
+}

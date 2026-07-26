@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/lint-output.json",
+  "title": "Lint plugin output",
+  "description": "Output contract for interface linter plugins. Includes required semantic fields and textual detail. A low score is still valid output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["score", "raw"],
+  "properties": {
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Quality score from 0 (worst) to 100 (best)."
+    },
+    "raw": {
+      "$ref": "defs.json#/$defs/RawOutput"
+    },
+    "extra": {
+      "$ref": "defs.json#/$defs/SemanticExtra",
+      "description": "Optional extensions (for example findingCounts). Must not replace or redefine score."
+    }
+  },
+  "examples": [
+    {
+      "score": 87,
+      "raw": "warning[operation-operationId]: Operation is missing operationId.\n  #/paths/~1pets/get\n",
+      "extra": {
+        "findingCounts": {
+          "error": 0,
+          "warning": 1,
+          "info": 0
+        }
+      }
+    }
+  ]
+}

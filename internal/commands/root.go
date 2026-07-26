@@ -34,6 +34,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 	//cobra.OnInitialize(initConfig)
 	//rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./ifc/config.yaml)")
 }

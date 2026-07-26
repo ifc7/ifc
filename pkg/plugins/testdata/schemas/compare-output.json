@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/compare-output.json",
+  "title": "Compare plugin output",
+  "description": "Output contract for interface change-detector plugins. Includes required semantic fields and textual detail. breaking=true is still valid output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["breaking", "raw"],
+  "properties": {
+    "breaking": {
+      "type": "boolean",
+      "description": "True if the after document introduces one or more breaking changes relative to before."
+    },
+    "raw": {
+      "$ref": "defs.json#/$defs/RawOutput"
+    },
+    "extra": {
+      "$ref": "defs.json#/$defs/SemanticExtra",
+      "description": "Optional extensions (for example changeCounts). Must not replace or redefine breaking."
+    }
+  },
+  "examples": [
+    {
+      "breaking": true,
+      "raw": "BREAKING: Removed path GET /pets\nNON-BREAKING: Added optional query parameter limit on GET /orders\n",
+      "extra": {
+        "changeCounts": {
+          "breaking": 1,
+          "nonBreaking": 1
+        }
+      }
+    }
+  ]
+}

@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,9 +16,9 @@ import (
 
 // Credentials represents the JWT credentials used to access the IFC API.
 type Credentials struct {
-	AccessToken  string     `json:"access_token"`
-	ExpiresAt    time.Time  `json:"expires_at"`
-	RefreshToken *string    `json:"refresh_token,omitempty"`
+	AccessToken  string    `json:"access_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	RefreshToken *string   `json:"refresh_token,omitempty"`
 }
 
 // CredentialsService manages getting and refreshing JWT credentials.
@@ -47,9 +46,8 @@ func WithCredentialStore(store *FileCredentialStore) CredentialsServiceOptions {
 // NewCredentialsService creates a new CredentialsService with the given options.
 func NewCredentialsService(opts ...CredentialsServiceOptions) (*CredentialsService, error) {
 	client := CredentialsService{
-		deviceFlowHost:         internal.DeviceFlowURL,
-		deviceFlowClientId:     internal.DeviceFlowClientId,
-		deviceFlowClientSecret: internal.DeviceFlowClientSecret,
+		deviceFlowHost:     internal.DeviceFlowURL,
+		deviceFlowClientId: internal.DeviceFlowClientId,
 	}
 	for _, o := range opts {
 		if err := o(&client); err != nil {
@@ -228,7 +226,7 @@ func applyDevicePollError(oauthErr *OAuth2ErrorResponse, intervalSec *int) (wait
 func (s *CredentialsService) pollForTokens(ctx context.Context, deviceCode string, interval int) (*AccessTokenResponse, error) {
 	intervalSec := interval
 	if intervalSec < 1 {
-		intervalSec = 5
+		intervalSec = 2
 	}
 
 	for {
@@ -299,6 +297,7 @@ func (s *CredentialsService) pollForTokens(ctx context.Context, deviceCode strin
 		case <-time.After(time.Duration(intervalSec) * time.Second):
 			// continue polling
 		}
+		time.Sleep(time.Duration(intervalSec) * time.Second)
 	}
 }
 
@@ -319,9 +318,6 @@ func (s *CredentialsService) setCredentials(tokens *AccessTokenResponse) {
 func (s *CredentialsService) clientHeaderEditor() RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if s.deviceFlowClientSecret != "" {
-			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s.deviceFlowClientId+":"+s.deviceFlowClientSecret)))
-		}
 		return nil
 	}
 }
@@ -330,4 +326,3 @@ func (s *CredentialsService) clientHeaderEditor() RequestEditorFn {
 func (t *AccessTokenResponse) expiresTime() time.Time {
 	return time.Now().Add(time.Duration(t.ExpiresIn) * time.Second)
 }
-
