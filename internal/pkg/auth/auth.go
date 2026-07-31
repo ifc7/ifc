@@ -212,7 +212,13 @@ func applyDevicePollError(oauthErr *OAuth2ErrorResponse, intervalSec *int) (wait
 	case "authorization_pending":
 		return true, nil
 	case "slow_down":
+		// RFC 8628: increase polling interval by 5 seconds, but cap growth so a burst of
+		// slow_down responses (common with a tight server interval) does not stall login.
+		const maxPollIntervalSec = 15
 		*intervalSec += 5
+		if *intervalSec > maxPollIntervalSec {
+			*intervalSec = maxPollIntervalSec
+		}
 		return true, nil
 	case "expired_token", "invalid_grant":
 		return false, fmt.Errorf("device code expired or invalid: %s", errMsg)
@@ -291,13 +297,12 @@ func (s *CredentialsService) pollForTokens(ctx context.Context, deviceCode strin
 			return nil, fmt.Errorf("token request failed without specific error (status %d): %s", response.StatusCode(), errMsg)
 		}
 
+		// Non-JSON error (e.g. ALB/Lambda 5xx during the AuthZ_code race). Wait once and retry.
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(time.Duration(intervalSec) * time.Second):
-			// continue polling
 		}
-		time.Sleep(time.Duration(intervalSec) * time.Second)
 	}
 }
 
