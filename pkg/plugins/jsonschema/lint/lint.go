@@ -2,23 +2,39 @@
 package lint
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
-	"github.com/kaptinlin/jsonschema"
-	"gopkg.in/yaml.v3"
+	schemautil "github.com/daveshanley/vacuum/jsonschema"
+	"github.com/daveshanley/vacuum/model"
+	"github.com/daveshanley/vacuum/motor"
+	"github.com/daveshanley/vacuum/rulesets"
+	"github.com/daveshanley/vacuum/statistics"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
 )
 
-const pluginID = "jsonschema-lint@v0"
+const pluginID = "jsonschema-lint@v1"
 
 // Plugin is the default JSON Schema linter.
 type Plugin struct{}
 
 // ID returns the plugin identifier.
 func (Plugin) ID() string { return pluginID }
+
+var (
+	recommendedOnce sync.Once
+	recommendedRS   *rulesets.RuleSet
+)
+
+func recommendedRuleSet() *rulesets.RuleSet {
+	recommendedOnce.Do(func() {
+		recommendedRS = rulesets.BuildDefaultRuleSets().GenerateJSONSchemaRecommendedRuleSet()
+	})
+	return recommendedRS
+}
 
 // Lint analyzes a JSON Schema document and returns a quality score plus raw detail.
 func (Plugin) Lint(input contract.LintInput) (contract.LintOutput, error) {
@@ -30,75 +46,103 @@ func (Plugin) Lint(input contract.LintInput) (contract.LintOutput, error) {
 		return contract.LintOutput{}, err
 	}
 
-	jsonBytes, err := toJSON(raw)
-	if err != nil {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
 		return contract.LintOutput{
 			Score: 0,
-			Raw:   fmt.Sprintf("error: failed to parse document: %v\n", err),
+			Raw:   fmt.Sprintf("error: failed to parse JSON Schema document: %v\n", err),
+			Extra: map[string]any{
+				"findingCounts": map[string]int{"error": 1, "warning": 0, "info": 0},
+			},
+		}, nil
+	}
+	dialect := schemautil.DetectDialect(&root)
+
+	exec := motor.ApplyRulesToRuleSet(&motor.RuleSetExecution{
+		RuleSet:           recommendedRuleSet(),
+		Spec:              raw,
+		SkipDocumentCheck: true,
+		SpecFormat:        dialect.Format,
+	})
+	defer exec.ReleaseOwnedResources()
+
+	if len(exec.Errors) > 0 {
+		return contract.LintOutput{
+			Score: 0,
+			Raw:   fmt.Sprintf("error: failed to lint JSON Schema document: %v\n", exec.Errors[0]),
 			Extra: map[string]any{
 				"findingCounts": map[string]int{"error": 1, "warning": 0, "info": 0},
 			},
 		}, nil
 	}
 
-	var findings []string
-	errorCount := 0
-	warningCount := 0
-	infoCount := 0
+	resultSet := model.NewRuleResultSet(exec.Results)
+	sorted := resultSet.SortResultsByLineNumber()
 
-	if _, err := jsonschema.NewCompiler().Compile(jsonBytes); err != nil {
-		errorCount++
-		findings = append(findings, fmt.Sprintf("error: invalid JSON Schema: %v", err))
-	}
-
-	var doc map[string]any
-	if err := json.Unmarshal(jsonBytes, &doc); err == nil {
-		if _, ok := doc["$schema"]; !ok {
-			warningCount++
-			findings = append(findings, "warning[schema-missing]: Document is missing $schema.")
-		}
-		if _, ok := doc["type"]; !ok {
-			if _, hasProps := doc["properties"]; !hasProps {
-				infoCount++
-				findings = append(findings, "info[type-missing]: Document has no type or properties.")
-			}
-		}
-		if title, ok := doc["title"].(string); !ok || strings.TrimSpace(title) == "" {
-			infoCount++
-			findings = append(findings, "info[title-missing]: Document is missing title.")
-		}
-	}
-
-	score := 100 - (errorCount * 40) - (warningCount * 10) - (infoCount * 2)
+	score := statistics.CalculateQualityScore(resultSet)
 	if score < 0 {
 		score = 0
 	}
+	if score > 100 {
+		score = 100
+	}
 
-	rawOut := strings.Join(findings, "\n")
-	if rawOut != "" {
-		rawOut += "\n"
+	var b strings.Builder
+	for _, r := range sorted {
+		if r == nil {
+			continue
+		}
+		severity := displaySeverity(r.RuleSeverity)
+		ruleID := r.RuleId
+		if ruleID == "" && r.Rule != nil {
+			ruleID = r.Rule.Id
+		}
+		fmt.Fprintf(&b, "%s[%s]: %s", severity, ruleID, r.Message)
+		if loc := formatLocation(r); loc != "" {
+			fmt.Fprintf(&b, "\n  %s", loc)
+		}
+		b.WriteByte('\n')
 	}
 
 	return contract.LintOutput{
 		Score: score,
-		Raw:   rawOut,
+		Raw:   b.String(),
 		Extra: map[string]any{
 			"findingCounts": map[string]int{
-				"error":   errorCount,
-				"warning": warningCount,
-				"info":    infoCount,
+				"error":   resultSet.GetErrorCount(),
+				"warning": resultSet.GetWarnCount(),
+				"info":    resultSet.GetInfoCount() + resultSet.GetHintCount(),
 			},
 		},
 	}, nil
 }
 
-func toJSON(data []byte) ([]byte, error) {
-	if json.Valid(data) {
-		return data, nil
+func displaySeverity(severity string) string {
+	switch severity {
+	case model.SeverityWarn:
+		return "warning"
+	case model.SeverityError, model.SeverityInfo, model.SeverityHint:
+		return severity
+	default:
+		if severity == "" {
+			return "warning"
+		}
+		return severity
 	}
-	var v any
-	if err := yaml.Unmarshal(data, &v); err != nil {
-		return nil, err
+}
+
+func formatLocation(r *model.RuleFunctionResult) string {
+	if r == nil {
+		return ""
 	}
-	return json.Marshal(v)
+	if r.Path != "" {
+		return r.Path
+	}
+	if r.StartNode != nil {
+		return fmt.Sprintf("%d:%d", r.StartNode.Line, r.StartNode.Column)
+	}
+	if r.Range.Start.Line > 0 {
+		return fmt.Sprintf("%d:%d", r.Range.Start.Line, r.Range.Start.Char)
+	}
+	return ""
 }

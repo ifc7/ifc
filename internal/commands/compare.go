@@ -22,8 +22,9 @@ Arguments:
 Both documents must share the same interface type (OpenAPI or JSON Schema).
 File paths work even without an ifc.yaml project.
 
-Prints plugin id and breaking=true/false. Exit status is non-zero only when a
-plugin fails or input is invalid; breaking changes do not fail the command.
+Prints plugin id and breaking=true/false. Use --verbose to print the plugin's
+raw change report. Exit status is non-zero only when a plugin fails or input is
+invalid; breaking changes do not fail the command.
 `,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,13 +48,16 @@ plugin fails or input is invalid; breaking changes do not fail the command.
 		fmt.Printf("%s %s\n", ui.KeyHints("after:   "), result.After)
 		fmt.Printf("%s %s\n", ui.KeyHints("plugin:  "), result.PluginID)
 		fmt.Printf("%s %s\n", ui.KeyHints("breaking:"), ui.FormatBreaking(result.Output.Breaking))
-		if result.Output.Raw != "" {
+		if compareVerbose && result.Output.Raw != "" {
 			fmt.Printf("\n%s", result.Output.Raw)
 		}
 		return nil
 	},
 }
 
+var compareVerbose bool
+
 func init() {
+	compareCmd.Flags().BoolVarP(&compareVerbose, "verbose", "v", false, "print the plugin raw change report")
 	rootCmd.AddCommand(compareCmd)
 }

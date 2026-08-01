@@ -20,8 +20,9 @@ Arguments:
              With no arguments, lints all owned interfaces
              File paths work even without an ifc.yaml project
 
-Prints plugin id and quality score. Exit status is non-zero only when a plugin
-fails or input is invalid; a low score does not fail the command.
+Prints plugin id and quality score. Use --verbose to print the plugin's raw
+findings. Exit status is non-zero only when a plugin fails or input is invalid;
+a low score does not fail the command.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()
@@ -31,7 +32,7 @@ fails or input is invalid; a low score does not fail the command.
 				return fmt.Errorf("error loading project config: %w", err)
 			}
 			for _, path := range args {
-				if err := printLint(path); err != nil {
+				if err := printLint(path, lintVerbose); err != nil {
 					return err
 				}
 			}
@@ -42,7 +43,7 @@ fails or input is invalid; a low score does not fail the command.
 			return err
 		}
 		for _, path := range paths {
-			if err := printLint(path); err != nil {
+			if err := printLint(path, lintVerbose); err != nil {
 				return err
 			}
 		}
@@ -50,7 +51,9 @@ fails or input is invalid; a low score does not fail the command.
 	},
 }
 
-func printLint(path string) error {
+var lintVerbose bool
+
+func printLint(path string, verbose bool) error {
 	result, err := project.LintFile(path)
 	if err != nil {
 		return err
@@ -58,12 +61,13 @@ func printLint(path string) error {
 	fmt.Println(ui.Apply(ui.Emphasis, result.Target))
 	fmt.Printf("  %s %s\n", ui.KeyHints("plugin:"), result.PluginID)
 	fmt.Printf("  %s %s\n", ui.KeyHints("score: "), ui.FormatScore(result.Output.Score))
-	if result.Output.Raw != "" {
+	if verbose && result.Output.Raw != "" {
 		fmt.Printf("\n%s", result.Output.Raw)
 	}
 	return nil
 }
 
 func init() {
+	lintCmd.Flags().BoolVarP(&lintVerbose, "verbose", "v", false, "print the plugin raw lint findings")
 	rootCmd.AddCommand(lintCmd)
 }

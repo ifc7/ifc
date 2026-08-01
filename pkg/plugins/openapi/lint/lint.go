@@ -4,21 +4,35 @@ package lint
 import (
 	"fmt"
 	"strings"
+	"sync"
 
-	"github.com/pb33f/libopenapi"
-	v2high "github.com/pb33f/libopenapi/datamodel/high/v2"
-	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/daveshanley/vacuum/model"
+	"github.com/daveshanley/vacuum/motor"
+	"github.com/daveshanley/vacuum/rulesets"
+	"github.com/daveshanley/vacuum/statistics"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
 )
 
-const pluginID = "openapi-lint@v0"
+const pluginID = "openapi-lint@v1"
 
 // Plugin is the default OpenAPI linter.
 type Plugin struct{}
 
 // ID returns the plugin identifier.
 func (Plugin) ID() string { return pluginID }
+
+var (
+	recommendedOnce sync.Once
+	recommendedRS   *rulesets.RuleSet
+)
+
+func recommendedRuleSet() *rulesets.RuleSet {
+	recommendedOnce.Do(func() {
+		recommendedRS = rulesets.BuildDefaultRuleSets().GenerateOpenAPIRecommendedRuleSet()
+	})
+	return recommendedRS
+}
 
 // Lint analyzes an OpenAPI document and returns a quality score plus raw detail.
 func (Plugin) Lint(input contract.LintInput) (contract.LintOutput, error) {
@@ -30,117 +44,89 @@ func (Plugin) Lint(input contract.LintInput) (contract.LintOutput, error) {
 		return contract.LintOutput{}, err
 	}
 
-	doc, err := libopenapi.NewDocument(raw)
-	if err != nil {
+	exec := motor.ApplyRulesToRuleSet(&motor.RuleSetExecution{
+		RuleSet: recommendedRuleSet(),
+		Spec:    raw,
+	})
+	defer exec.ReleaseOwnedResources()
+
+	if len(exec.Errors) > 0 {
 		return contract.LintOutput{
 			Score: 0,
-			Raw:   fmt.Sprintf("error: failed to parse OpenAPI document: %v\n", err),
+			Raw:   fmt.Sprintf("error: failed to lint OpenAPI document: %v\n", exec.Errors[0]),
 			Extra: map[string]any{
 				"findingCounts": map[string]int{"error": 1, "warning": 0, "info": 0},
 			},
 		}, nil
 	}
 
-	var findings []string
-	errorCount := 0
-	warningCount := 0
+	resultSet := model.NewRuleResultSet(exec.Results)
+	sorted := resultSet.SortResultsByLineNumber()
 
-	version := doc.GetVersion()
-	if strings.HasPrefix(version, "2") {
-		model, buildErr := doc.BuildV2Model()
-		if buildErr != nil {
-			errorCount++
-			findings = append(findings, fmt.Sprintf("error: %v", buildErr))
-		} else if model != nil {
-			warningCount += collectSwaggerWarnings(&model.Model, &findings)
-		}
-	} else {
-		model, buildErr := doc.BuildV3Model()
-		if buildErr != nil {
-			errorCount++
-			findings = append(findings, fmt.Sprintf("error: %v", buildErr))
-		} else if model != nil {
-			warningCount += collectOpenAPIWarnings(&model.Model, &findings)
-		}
-	}
-
-	score := 100 - (errorCount * 40) - (warningCount * 5)
+	score := statistics.CalculateQualityScore(resultSet)
 	if score < 0 {
 		score = 0
 	}
+	if score > 100 {
+		score = 100
+	}
 
-	rawOut := strings.Join(findings, "\n")
-	if rawOut != "" {
-		rawOut += "\n"
+	var b strings.Builder
+	for _, r := range sorted {
+		if r == nil {
+			continue
+		}
+		severity := displaySeverity(r.RuleSeverity)
+		ruleID := r.RuleId
+		if ruleID == "" && r.Rule != nil {
+			ruleID = r.Rule.Id
+		}
+		fmt.Fprintf(&b, "%s[%s]: %s", severity, ruleID, r.Message)
+		if loc := formatLocation(r); loc != "" {
+			fmt.Fprintf(&b, "\n  %s", loc)
+		}
+		b.WriteByte('\n')
 	}
 
 	return contract.LintOutput{
 		Score: score,
-		Raw:   rawOut,
+		Raw:   b.String(),
 		Extra: map[string]any{
 			"findingCounts": map[string]int{
-				"error":   errorCount,
-				"warning": warningCount,
-				"info":    0,
+				"error":   resultSet.GetErrorCount(),
+				"warning": resultSet.GetWarnCount(),
+				"info":    resultSet.GetInfoCount() + resultSet.GetHintCount(),
 			},
 		},
 	}, nil
 }
 
-func collectOpenAPIWarnings(doc *v3high.Document, findings *[]string) int {
-	if doc == nil || doc.Paths == nil || doc.Paths.PathItems == nil {
-		return 0
-	}
-	count := 0
-	for pathPairs := doc.Paths.PathItems.First(); pathPairs != nil; pathPairs = pathPairs.Next() {
-		path := pathPairs.Key()
-		item := pathPairs.Value()
-		if item == nil {
-			continue
+func displaySeverity(severity string) string {
+	switch severity {
+	case model.SeverityWarn:
+		return "warning"
+	case model.SeverityError, model.SeverityInfo, model.SeverityHint:
+		return severity
+	default:
+		if severity == "" {
+			return "warning"
 		}
-		for _, op := range []*v3high.Operation{
-			item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace,
-		} {
-			if op == nil {
-				continue
-			}
-			if op.OperationId == "" {
-				count++
-				*findings = append(*findings, fmt.Sprintf("warning[operation-operationId]: Operation is missing operationId.\n  #/paths/%s", escapeJSONPointer(path)))
-			}
-		}
+		return severity
 	}
-	return count
 }
 
-func collectSwaggerWarnings(doc *v2high.Swagger, findings *[]string) int {
-	if doc == nil || doc.Paths == nil || doc.Paths.PathItems == nil {
-		return 0
+func formatLocation(r *model.RuleFunctionResult) string {
+	if r == nil {
+		return ""
 	}
-	count := 0
-	for pathPairs := doc.Paths.PathItems.First(); pathPairs != nil; pathPairs = pathPairs.Next() {
-		path := pathPairs.Key()
-		item := pathPairs.Value()
-		if item == nil {
-			continue
-		}
-		for _, op := range []*v2high.Operation{
-			item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch,
-		} {
-			if op == nil {
-				continue
-			}
-			if op.OperationId == "" {
-				count++
-				*findings = append(*findings, fmt.Sprintf("warning[operation-operationId]: Operation is missing operationId.\n  #/paths/%s", escapeJSONPointer(path)))
-			}
-		}
+	if r.Path != "" {
+		return r.Path
 	}
-	return count
-}
-
-func escapeJSONPointer(s string) string {
-	s = strings.ReplaceAll(s, "~", "~0")
-	s = strings.ReplaceAll(s, "/", "~1")
-	return s
+	if r.StartNode != nil {
+		return fmt.Sprintf("%d:%d", r.StartNode.Line, r.StartNode.Column)
+	}
+	if r.Range.Start.Line > 0 {
+		return fmt.Sprintf("%d:%d", r.Range.Start.Line, r.Range.Start.Char)
+	}
+	return ""
 }
