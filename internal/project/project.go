@@ -139,7 +139,7 @@ func (p *Project) canonicalConfigRefFor(ref string) (string, bool) {
 	if !strings.HasPrefix(ref, "interface_") {
 		return "", false
 	}
-	ifc, ok := p.manifest.Interfaces[ref]
+	_, ifc, ok := p.manifest.findInterface(ref)
 	if !ok || ifc.CanonicalUrl == "" {
 		return "", false
 	}
@@ -410,7 +410,7 @@ func (p *Project) fetchRevisions(ctx context.Context, ifc client.Interface) erro
 			return fmt.Errorf("error fetching revisions: unexpected response body")
 		}
 		rev := *getResp.JSON200
-		err = p.manifest.upsertRevision(ifc.Id, rev)
+		err = p.manifest.upsertRevision(manifestInterfaceKey(ifc), rev)
 		if err != nil {
 			return fmt.Errorf("error adding revision to manifest: %w", err)
 		}
@@ -431,7 +431,7 @@ func (p *Project) fetchReleases(ctx context.Context, ifc client.Interface) error
 		return fmt.Errorf("error fetching releases: unexpected response body")
 	}
 	for _, rel := range *resp.JSON200 {
-		err = p.manifest.upsertRelease(ifc.Id, rel)
+		err = p.manifest.upsertRelease(manifestInterfaceKey(ifc), rel)
 		if err != nil {
 			return fmt.Errorf("error adding release to manifest: %w", err)
 		}
@@ -441,16 +441,9 @@ func (p *Project) fetchReleases(ctx context.Context, ifc client.Interface) error
 
 // commit adds local changes to the manifest
 func (p *Project) commit(ctx context.Context, own Owned) error {
-	// TODO: handle reference for locally owned files that are not managed remotely
-	var id string
-	var err error
-	if own.Ref == "" {
-		id = own.Name
-	} else {
-		id, err = p.resolveRefToID(ctx, own.Ref)
-		if err != nil {
-			return fmt.Errorf("error resolving ref %s: %w", own.Ref, err)
-		}
+	key, err := p.manifestKeyForOwned(ctx, own)
+	if err != nil {
+		return err
 	}
 	b, err := fileio.ReadFile(own.Path)
 	if err != nil {
@@ -458,7 +451,7 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 	}
 	sha := sha256Checksum(b)
 	encoded := base64Encode(b)
-	manifestIfc, ok := p.manifest.Interfaces[id]
+	_, manifestIfc, ok := p.manifest.findInterface(key)
 	if !ok {
 		specType, err := DetectSpecificationType(b)
 		if err != nil {
@@ -479,13 +472,13 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 			Specification: encoded,
 			Notes:         &newIfc.RevisionNotes,
 		}
-		p.manifest.Interfaces[id] = &ManifestInterface{
+		entry := &ManifestInterface{
 			Interface: client.Interface{
 				Description:    &newIfc.Description,
 				LatestRevision: &revision,
 				Name:           newIfc.Name,
 				Type:           specType,
-				Id:             id,
+				Id:             key,
 			},
 			Revisions: map[string]*client.InterfaceRevision{
 				// TODO: figure out how to handle IDs before created on server
@@ -493,7 +486,20 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 			},
 			Releases: map[string]*client.InterfaceRelease{},
 		}
+		if path, ok := canonicalURLPath(own.Ref); ok {
+			entry.CanonicalUrl = path
+			key = path
+			entry.Id = ""
+		} else if path, ok := canonicalURLPath(key); ok {
+			entry.CanonicalUrl = path
+			key = path
+		}
+		p.manifest.Interfaces[key] = entry
 	} else {
+		if path, ok := canonicalURLPath(own.Ref); ok && manifestIfc.CanonicalUrl == "" {
+			manifestIfc.CanonicalUrl = path
+			p.manifest.ensureInterfaceKey(manifestIfc)
+		}
 		if manifestIfc.LatestRevision == nil || manifestIfc.LatestRevision.Checksum != sha {
 			newRev, err := promptNewRevisionCommit(ctx, own.Name)
 			if err != nil {
@@ -511,19 +517,40 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 				Id:            sha,
 				Notes:         &newRev.Notes,
 			}
-			p.manifest.Interfaces[id].Revisions[sha] = &revision
-			p.manifest.Interfaces[id].LatestRevision = &revision
+			manifestIfc.Revisions[sha] = &revision
+			manifestIfc.LatestRevision = &revision
 		}
 	}
 	return nil
 }
 
-// manifestIDForOwned returns the manifest map key for a locally owned interface.
-func (p *Project) manifestIDForOwned(ctx context.Context, own Owned) (client.InterfaceId, error) {
-	if own.Ref == "" {
-		return client.InterfaceId(own.Name), nil
+// manifestKeyForOwned returns the manifest map key for a locally owned interface.
+func (p *Project) manifestKeyForOwned(ctx context.Context, own Owned) (string, error) {
+	if key, ok := p.localManifestKeyForOwned(own); ok {
+		return key, nil
 	}
-	return p.resolveRefToID(ctx, own.Ref)
+	if own.Ref == "" {
+		return own.Name, nil
+	}
+	if path, ok := canonicalURLPath(own.Ref); ok {
+		id, err := p.resolveRefToID(ctx, own.Ref)
+		if err != nil {
+			return "", err
+		}
+		// Legacy manifests may still be keyed by interface ID.
+		if mapKey, _, ok := p.manifest.findInterface(id); ok {
+			return mapKey, nil
+		}
+		return path, nil
+	}
+	id, err := p.resolveRefToID(ctx, own.Ref)
+	if err != nil {
+		return "", err
+	}
+	if mapKey, _, ok := p.manifest.findInterface(id); ok {
+		return mapKey, nil
+	}
+	return string(id), nil
 }
 
 // push saves an interface revision or creates a new interface on the server.
@@ -534,13 +561,13 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	//    if not, create new interface on server according to manifest and add ref to config
 	//    if so, query the interface from the server and compare it to the manifest
 	// if changes in interface, revision, or release, push these changes
-	interfaceID, err := p.manifestIDForOwned(ctx, own)
+	manifestKey, err := p.manifestKeyForOwned(ctx, own)
 	if err != nil {
 		return nil, err
 	}
-	manifestEntry, ok := p.manifest.Interfaces[interfaceID]
+	_, manifestEntry, ok := p.manifest.findInterface(manifestKey)
 	if !ok {
-		return []string{fmt.Sprintf("Skipping %q: no manifest entry for interface %s. Run 'ifc commit' first.", own.Name, interfaceID)}, nil
+		return []string{fmt.Sprintf("Skipping %q: no manifest entry for interface %s. Run 'ifc commit' first.", own.Name, manifestKey)}, nil
 	}
 
 	var messages []string
@@ -621,18 +648,19 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			return nil, fmt.Errorf("error creating interface %s: unexpected response body", own.Name)
 		}
 		interfaceId := response.JSON201.Id
-		cfgRef, err := configRefFromCanonicalURL(response.JSON201.CanonicalUrl)
+		canonicalURL := response.JSON201.CanonicalUrl
+		cfgRef, err := configRefFromCanonicalURL(canonicalURL)
 		if err != nil {
 			return messages, fmt.Errorf("created interface %s missing canonicalUrl: %w", interfaceId, err)
 		}
 		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, cfgRef))
 		// Replace the temporary manifest key (the interface name) with the
-		// server-assigned interface ID everywhere in the manifest.
-		if err := p.manifest.reassignInterfaceID(interfaceID, interfaceId); err != nil {
-			return messages, fmt.Errorf("error updating interface ID in manifest: %w", err)
+		// server-assigned canonicalUrl and record the interface ID.
+		if err := p.manifest.reassignInterfaceKey(manifestKey, interfaceId, canonicalURL); err != nil {
+			return messages, fmt.Errorf("error updating interface key in manifest: %w", err)
 		}
-		if created := p.manifest.Interfaces[interfaceId]; created != nil {
-			created.CanonicalUrl = response.JSON201.CanonicalUrl
+		if created := p.manifest.Interfaces[canonicalURL]; created != nil {
+			created.applyServerIdentity(response.JSON201.Owner, response.JSON201.Slug, canonicalURL)
 		}
 		// Record the canonical ref so future commits and pushes resolve to this interface.
 		if err := p.config.updateOwnedInterfaceRef(own.Name, cfgRef); err != nil {
@@ -658,7 +686,7 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			if result.JSON201 == nil {
 				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 			}
-			if err := p.recordPushedRevision(interfaceId, revKey, result.JSON201); err != nil {
+			if err := p.recordPushedRevision(canonicalURL, revKey, result.JSON201); err != nil {
 				return messages, err
 			}
 			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
@@ -682,7 +710,13 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	}
 
 	// handle interfaces saved on server that might need to be updated
-	id := interfaceID
+	id := manifestEntry.Id
+	if id == "" {
+		id, err = p.resolveRefToID(ctx, own.Ref)
+		if err != nil {
+			return nil, err
+		}
+	}
 	userID, err := p.client.CurrentUserID(ctx)
 	if err != nil {
 		return nil, err
@@ -698,6 +732,8 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		return nil, fmt.Errorf("error fetching interface %s: unexpected response body", id)
 	}
 	serverIfc := *serverIfcResp.JSON200
+	manifestEntry.applyServerIdentity(serverIfc.Owner, serverIfc.Slug, serverIfc.CanonicalUrl)
+	p.manifest.ensureInterfaceKey(manifestEntry)
 	serverRevisionsResp, err := p.client.ListInterfaceRevisionsWithResponse(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching revisions: %w", err)
@@ -777,7 +813,7 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 		if result.JSON201 == nil {
 			return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 		}
-		if err := p.recordPushedRevision(id, revKey, result.JSON201); err != nil {
+		if err := p.recordPushedRevision(manifestInterfaceKey(manifestEntry.Interface), revKey, result.JSON201); err != nil {
 			return messages, err
 		}
 		messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
@@ -791,11 +827,15 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 
 // recordPushedRevision re-keys a locally committed revision to its server-assigned
 // ID and copies server-authoritative metadata into the manifest.
-func (p *Project) recordPushedRevision(ifcID client.InterfaceId, revKey string, serverRev *client.InterfaceRevisionDescriptor) error {
-	if err := p.manifest.reassignRevisionID(ifcID, revKey, serverRev.Id); err != nil {
+func (p *Project) recordPushedRevision(ifcKey string, revKey string, serverRev *client.InterfaceRevisionDescriptor) error {
+	if err := p.manifest.reassignRevisionID(ifcKey, revKey, serverRev.Id); err != nil {
 		return fmt.Errorf("error updating revision ID in manifest: %w", err)
 	}
-	if rev := p.manifest.Interfaces[ifcID].Revisions[serverRev.Id]; rev != nil {
+	_, ifc, ok := p.manifest.findInterface(ifcKey)
+	if !ok {
+		return fmt.Errorf("interface %s not found in manifest", ifcKey)
+	}
+	if rev := ifc.Revisions[serverRev.Id]; rev != nil {
 		rev.CreatedAt = serverRev.CreatedAt
 	}
 	return nil

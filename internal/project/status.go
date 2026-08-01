@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ifc7/ifc/internal/client"
 	"github.com/ifc7/ifc/internal/pkg/fileio"
 )
 
@@ -25,6 +24,7 @@ const (
 // InterfaceStatus is the working-tree status of one owned interface.
 type InterfaceStatus struct {
 	Name   string
+	Slug   string
 	Path   string
 	Ref    string
 	Kind   InterfaceStatusKind
@@ -50,6 +50,7 @@ func (p *Project) statusForOwned(own Owned) InterfaceStatus {
 		Name: own.Name,
 		Path: own.Path,
 		Ref:  own.Ref,
+		Slug: p.slugForOwned(own),
 	}
 	if own.Path == "" {
 		st.Kind = StatusError
@@ -68,13 +69,13 @@ func (p *Project) statusForOwned(own Owned) InterfaceStatus {
 		return st
 	}
 	sha := sha256Checksum(b)
-	id, ok := p.localManifestIDForOwned(own)
+	key, ok := p.localManifestKeyForOwned(own)
 	if !ok {
 		st.Kind = StatusNew
 		st.Detail = "not in local manifest"
 		return st
 	}
-	manifestIfc, ok := p.manifest.Interfaces[id]
+	_, manifestIfc, ok := p.manifest.findInterface(key)
 	if !ok || manifestIfc == nil {
 		st.Kind = StatusNew
 		st.Detail = "not in local manifest"
@@ -89,29 +90,41 @@ func (p *Project) statusForOwned(own Owned) InterfaceStatus {
 	return st
 }
 
-// localManifestIDForOwned resolves the manifest map key for an owned interface
+// slugForOwned returns the manifest slug for an owned interface, if known.
+func (p *Project) slugForOwned(own Owned) string {
+	key, ok := p.localManifestKeyForOwned(own)
+	if !ok {
+		return ""
+	}
+	_, ifc, ok := p.manifest.findInterface(key)
+	if !ok || ifc == nil {
+		return ""
+	}
+	return ifc.Slug
+}
+
+// localManifestKeyForOwned resolves the manifest map key for an owned interface
 // using only local config/manifest data (no network).
-func (p *Project) localManifestIDForOwned(own Owned) (client.InterfaceId, bool) {
+func (p *Project) localManifestKeyForOwned(own Owned) (string, bool) {
 	if own.Ref == "" {
-		return client.InterfaceId(own.Name), true
+		if mapKey, _, ok := p.manifest.findInterface(own.Name); ok {
+			return mapKey, true
+		}
+		return own.Name, true
+	}
+	if path, ok := canonicalURLPath(own.Ref); ok {
+		if mapKey, _, ok := p.manifest.findInterface(path); ok {
+			return mapKey, true
+		}
 	}
 	if strings.HasPrefix(own.Ref, "interface_") {
-		return client.InterfaceId(own.Ref), true
+		if mapKey, _, ok := p.manifest.findInterface(own.Ref); ok {
+			return mapKey, true
+		}
+		return own.Ref, true
 	}
-	for id, iface := range p.manifest.Interfaces {
-		if iface == nil || iface.CanonicalUrl == "" {
-			continue
-		}
-		cfgRef, err := configRefFromCanonicalURL(iface.CanonicalUrl)
-		if err != nil {
-			continue
-		}
-		if refsEquivalent(cfgRef, own.Ref) {
-			return client.InterfaceId(id), true
-		}
-	}
-	if _, ok := p.manifest.Interfaces[own.Name]; ok {
-		return client.InterfaceId(own.Name), true
+	if mapKey, _, ok := p.manifest.findInterface(own.Name); ok {
+		return mapKey, true
 	}
 	return "", false
 }
@@ -126,14 +139,32 @@ func FormatStatusReport(statuses []InterfaceStatus) string {
 	if len(statuses) == 0 {
 		return "No owned interfaces tracked in ifc.yaml.\n"
 	}
+	nameWidth, slugWidth := 4, 4 // "name", "slug"
+	for _, st := range statuses {
+		if len(st.Name) > nameWidth {
+			nameWidth = len(st.Name)
+		}
+		slug := st.Slug
+		if slug == "" {
+			slug = "-"
+		}
+		if len(slug) > slugWidth {
+			slugWidth = len(slug)
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintln(&b, "Owned interface status:")
 	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "  %-10s %-*s %-*s %s\n", "status", nameWidth, "name", slugWidth, "slug", "path")
 	counts := map[InterfaceStatusKind]int{}
 	for _, st := range statuses {
 		counts[st.Kind]++
 		kind := formatStatusKind(st.Kind)
-		line := fmt.Sprintf("  %s %-24s %s", kind, st.Name, st.Path)
+		slug := st.Slug
+		if slug == "" {
+			slug = "-"
+		}
+		line := fmt.Sprintf("  %s %-*s %-*s %s", kind, nameWidth, st.Name, slugWidth, slug, st.Path)
 		if st.Detail != "" && st.Kind != StatusClean {
 			line = fmt.Sprintf("%s  (%s)", line, st.Detail)
 		}

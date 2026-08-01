@@ -12,11 +12,13 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initializes a new IFC7 project within a Git repository.",
+	Short: "Create ifc.yaml and .ifc/ in the current directory",
 	Long: `
-Initializes a new IFC7 project within a Git repository.
+Create a new IFC project by writing ifc.yaml and .ifc/manifest.json.
 
+Run once per repository. Fails if ifc.yaml already exists.
 `,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !projectIsInitialized() {
 			proj, err := project.New()

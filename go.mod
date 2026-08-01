@@ -10,6 +10,7 @@ require (
 	github.com/kaptinlin/jsonschema v0.9.3
 	github.com/oapi-codegen/runtime v1.6.0
 	github.com/pb33f/libopenapi v0.38.7
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/mock v0.6.0
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef

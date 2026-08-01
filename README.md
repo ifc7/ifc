@@ -30,6 +30,8 @@ With Go 1.26 installed, `make install` will build and copy the `ifc` binary to y
 `ifc fetch`
 You will have a local copy of the external interface you are using in `.ifc/ifc7.dev/orgs/ifc7/restapi/latest.yaml`
 
+   For owned interfaces, update working-tree files from the fetched manifest with `ifc checkout`.
+
 4. If you have an account at `ifc7.dev`, you can push local copies of interfaces you own to the hub:
 `ifc login && ifc push`
 
@@ -54,6 +56,10 @@ Use `ifc --help` for detailed explanations of commands.
 `ifc add` - Add a locally owned interface to your project.
 
 `ifc status` - Show whether owned interface files differ from the local manifest.
+
+`ifc diff <name|slug>` - Print a unified diff of an owned interface file vs the latest revision in the local manifest.
+
+`ifc checkout [name|slug]...` - Update owned interface files on disk from the latest revision in the local manifest (use after `ifc fetch`; `--force` overwrites local edits).
 
 `ifc scan [path]` - Find untracked OpenAPI / JSON Schema files and add them to the project. Optional path limits the search to a subdirectory.
 

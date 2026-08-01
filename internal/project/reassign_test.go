@@ -78,23 +78,29 @@ func TestManifest_reassignRevisionID(t *testing.T) {
 	}
 }
 
-func TestManifest_reassignInterfaceID(t *testing.T) {
-	const newID = "interface_01kn3ma93qe59r0p8kw6821y2n"
+func TestManifest_reassignInterfaceKey(t *testing.T) {
+	const (
+		newID        = "interface_01kn3ma93qe59r0p8kw6821y2n"
+		canonicalURL = "/i/@test-user/ifc7-rest"
+	)
 	mft := committedManifest("ifc7-rest")
 
-	if err := mft.reassignInterfaceID("ifc7-rest", newID); err != nil {
-		t.Fatalf("reassignInterfaceID returned error: %v", err)
+	if err := mft.reassignInterfaceKey("ifc7-rest", newID, canonicalURL); err != nil {
+		t.Fatalf("reassignInterfaceKey returned error: %v", err)
 	}
 
 	if _, ok := mft.Interfaces["ifc7-rest"]; ok {
 		t.Fatal("temporary interface key still present")
 	}
-	ifc, ok := mft.Interfaces[newID]
+	ifc, ok := mft.Interfaces[canonicalURL]
 	if !ok {
-		t.Fatalf("interface not re-keyed to %q", newID)
+		t.Fatalf("interface not re-keyed to %q", canonicalURL)
 	}
 	if ifc.Id != newID {
 		t.Fatalf("interface Id = %q, want %q", ifc.Id, newID)
+	}
+	if ifc.CanonicalUrl != canonicalURL {
+		t.Fatalf("interface CanonicalUrl = %q, want %q", ifc.CanonicalUrl, canonicalURL)
 	}
 	if got := ifc.Releases["1.0.0"].InterfaceId; got != newID {
 		t.Fatalf("release interface Id = %q, want %q", got, newID)
@@ -244,6 +250,8 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
 				JSON201: &client.InterfaceDescriptor{
 					Id:           newIfcID,
+					Owner:        client.InterfaceOwner(testUserID),
+					Slug:         "ifc7-rest",
 					CanonicalUrl: "/i/@test-user/ifc7-rest",
 				},
 			}, nil)
@@ -265,15 +273,25 @@ func TestProject_Push_NewInterfaceRemapsIDs(t *testing.T) {
 		t.Fatalf("Push returned error: %v", err)
 	}
 
+	const wantKey = "/i/@test-user/ifc7-rest"
 	if _, ok := proj.manifest.Interfaces["ifc7-rest"]; ok {
 		t.Fatal("interface still keyed by name after push")
 	}
-	ifc, ok := proj.manifest.Interfaces[newIfcID]
+	ifc, ok := proj.manifest.Interfaces[wantKey]
 	if !ok {
-		t.Fatalf("interface not re-keyed to %q", newIfcID)
+		t.Fatalf("interface not re-keyed to %q", wantKey)
 	}
 	if ifc.Id != newIfcID {
 		t.Fatalf("interface Id = %q, want %q", ifc.Id, newIfcID)
+	}
+	if ifc.Owner != client.InterfaceOwner(testUserID) {
+		t.Fatalf("interface Owner = %q, want %q", ifc.Owner, testUserID)
+	}
+	if ifc.Slug != "ifc7-rest" {
+		t.Fatalf("interface Slug = %q, want %q", ifc.Slug, "ifc7-rest")
+	}
+	if ifc.CanonicalUrl != wantKey {
+		t.Fatalf("interface CanonicalUrl = %q, want %q", ifc.CanonicalUrl, wantKey)
 	}
 	if _, ok := ifc.Revisions[testChecksum]; ok {
 		t.Fatal("revision still keyed by checksum after push")
@@ -333,6 +351,8 @@ func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
 				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
 				JSON201: &client.InterfaceDescriptor{
 					Id:           newIfcID,
+					Owner:        client.InterfaceOwner(orgID),
+					Slug:         "ifc7-rest",
 					CanonicalUrl: "/i/acme/ifc7-rest",
 				},
 			}, nil)
@@ -354,12 +374,22 @@ func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
 		t.Fatalf("Push returned error: %v", err)
 	}
 
-	ifc, ok := proj.manifest.Interfaces[newIfcID]
+	const wantKey = "/i/acme/ifc7-rest"
+	ifc, ok := proj.manifest.Interfaces[wantKey]
 	if !ok {
-		t.Fatalf("interface not re-keyed to %q", newIfcID)
+		t.Fatalf("interface not re-keyed to %q", wantKey)
 	}
 	if ifc.Id != newIfcID {
 		t.Fatalf("interface Id = %q, want %q", ifc.Id, newIfcID)
+	}
+	if ifc.Owner != client.InterfaceOwner(orgID) {
+		t.Fatalf("interface Owner = %q, want %q", ifc.Owner, orgID)
+	}
+	if ifc.Slug != "ifc7-rest" {
+		t.Fatalf("interface Slug = %q, want %q", ifc.Slug, "ifc7-rest")
+	}
+	if ifc.CanonicalUrl != wantKey {
+		t.Fatalf("interface CanonicalUrl = %q, want %q", ifc.CanonicalUrl, wantKey)
 	}
 	wantRef := "ifc7.dev/i/acme/ifc7-rest"
 	found := false

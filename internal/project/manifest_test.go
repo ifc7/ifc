@@ -184,6 +184,84 @@ func TestManifest_upsertInterface(t *testing.T) {
 				},
 			},
 		},
+		"updates owner slug and canonicalUrl": {
+			mft: &Manifest{
+				Interfaces: map[string]*ManifestInterface{
+					"test_ifc": {
+						Interface: client.Interface{
+							Id:   "test_ifc",
+							Type: client.JSONSCHEMA,
+							Name: "test_ifc",
+						},
+						Revisions: map[string]*client.InterfaceRevision{},
+						Releases:  map[string]*client.InterfaceRelease{},
+					},
+				},
+			},
+			ifc: client.Interface{
+				Id:           "test_ifc",
+				Type:         client.JSONSCHEMA,
+				Name:         "test_ifc",
+				Owner:        "user_abc",
+				Slug:         "test-ifc",
+				CanonicalUrl: "/i/@alice/test-ifc",
+			},
+			expMft: &Manifest{
+				Interfaces: map[string]*ManifestInterface{
+					"/i/@alice/test-ifc": {
+						Interface: client.Interface{
+							Id:           "test_ifc",
+							Type:         client.JSONSCHEMA,
+							Name:         "test_ifc",
+							Owner:        "user_abc",
+							Slug:         "test-ifc",
+							CanonicalUrl: "/i/@alice/test-ifc",
+						},
+						Revisions: map[string]*client.InterfaceRevision{},
+						Releases:  map[string]*client.InterfaceRelease{},
+					},
+				},
+			},
+		},
+		"preserves owner slug when server omits them": {
+			mft: &Manifest{
+				Interfaces: map[string]*ManifestInterface{
+					"/i/@alice/test-ifc": {
+						Interface: client.Interface{
+							Id:           "test_ifc",
+							Type:         client.JSONSCHEMA,
+							Name:         "test_ifc",
+							Owner:        "user_abc",
+							Slug:         "test-ifc",
+							CanonicalUrl: "/i/@alice/test-ifc",
+						},
+						Revisions: map[string]*client.InterfaceRevision{},
+						Releases:  map[string]*client.InterfaceRelease{},
+					},
+				},
+			},
+			ifc: client.Interface{
+				Id:   "test_ifc",
+				Type: client.JSONSCHEMA,
+				Name: "renamed",
+			},
+			expMft: &Manifest{
+				Interfaces: map[string]*ManifestInterface{
+					"/i/@alice/test-ifc": {
+						Interface: client.Interface{
+							Id:           "test_ifc",
+							Type:         client.JSONSCHEMA,
+							Name:         "renamed",
+							Owner:        "user_abc",
+							Slug:         "test-ifc",
+							CanonicalUrl: "/i/@alice/test-ifc",
+						},
+						Revisions: map[string]*client.InterfaceRevision{},
+						Releases:  map[string]*client.InterfaceRelease{},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := tc.mft.upsertInterface(tc.ifc)

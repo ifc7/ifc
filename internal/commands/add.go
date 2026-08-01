@@ -9,11 +9,16 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add [path] [name]",
-	Short: "Add a locally owned interface to your project.",
+	Use:   "add <path> <name>",
+	Short: "Track a local specification file as an owned interface",
 	Long: `
-Add a locally owned interface to your project.
+Add a local specification file to ifc.yaml as an owned interface.
 
+Arguments:
+  path  Path to an OpenAPI or JSON Schema file
+  name  Local name used by other ifc commands
+
+Only updates ifc.yaml. Run ifc commit to snapshot the file into the manifest.
 `,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {

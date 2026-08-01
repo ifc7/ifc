@@ -10,14 +10,16 @@ import (
 
 var scanCmd = &cobra.Command{
 	Use:   "scan [path]",
-	Short: "Find untracked OpenAPI / JSON Schema files and add them to the project.",
+	Short: "Find untracked specs and add them as owned interfaces",
 	Long: `
-Recursively search for valid OpenAPI or JSON Schema documents (YAML or JSON)
-that are not already listed in ifc.yaml. Present any matches so they can be
-added as owned interfaces.
+Recursively find OpenAPI or JSON Schema files (YAML or JSON) not already
+listed in ifc.yaml, then interactively select which to add as owned interfaces.
 
-If path is provided, the search starts in that subdirectory; otherwise the
-current directory is used.
+Arguments:
+  path  Optional directory to search (default: current directory)
+
+Skips common vendor/cache directories (.git, node_modules, vendor, etc.).
+Only updates ifc.yaml; run ifc commit to snapshot selected files.
 `,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

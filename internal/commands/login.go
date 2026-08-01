@@ -10,13 +10,14 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with the IFC7 server",
+	Short: "Authenticate with the ifc7.dev hub",
 	Long: `
-Authenticate with the IFC7 server, obtaining credentials for API access.
+Obtain API credentials for ifc7.dev via browser device login.
 
-You will be prompted to open a URL in your browser and log in.
-
+Requires an initialized project (ifc.yaml). Stores credentials for fetch and
+push. Prints a URL to open and complete authentication.
 `,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !projectIsInitialized() {
 			return fmt.Errorf("project is not initialized")

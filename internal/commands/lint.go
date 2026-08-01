@@ -12,13 +12,15 @@ var lintCmd = &cobra.Command{
 	Use:   "lint [name|path]...",
 	Short: "Lint interface specifications",
 	Long: `
-Run the default linter plugin for one or more interface specifications.
+Run the default linter plugin on one or more specifications.
 
-Targets may be owned interface names from ifc.yaml or paths to specification
-files. With no targets, all owned interfaces are linted.
+Arguments:
+  name|path  Owned interface name from ifc.yaml, or a file path
+             With no arguments, lints all owned interfaces
+             File paths work even without an ifc.yaml project
 
-Exit status is non-zero only when a plugin fails to run or input is invalid.
-A low quality score does not fail the command.
+Prints plugin id and quality score. Exit status is non-zero only when a plugin
+fails or input is invalid; a low score does not fail the command.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()

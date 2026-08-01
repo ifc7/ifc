@@ -9,11 +9,16 @@ import (
 )
 
 var pushCmd = &cobra.Command{
-	Use:   "push",
-	Short: "Push the latest copies of interfaces managed by this project to a remote hub.",
+	Use:   "push [ref]",
+	Short: "Push committed owned interfaces to the hub",
 	Long: `
-Push the latest copies of interfaces managed by this project to a remote hub.
+Push owned interfaces from the local manifest to the ifc7.dev hub.
 
+Arguments:
+  ref  Optional hub ref of one owned interface (as in ifc.yaml); omit to push all
+
+Requires login and a prior ifc commit. When an owned interface has no ref yet,
+creates it on the hub and prompts for the owner (user or organization).
 `,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -10,15 +10,19 @@ import (
 
 var compareCmd = &cobra.Command{
 	Use:   "compare <before> <after>",
-	Short: "Compare two interface specifications for breaking changes",
+	Short: "Compare two specifications for breaking changes",
 	Long: `
 Run the default change-detector plugin between two specifications.
 
-Arguments may be owned interface names from ifc.yaml or paths to specification
-files. Both documents must share the same interface type.
+Arguments:
+  before  Owned interface name or file path (baseline)
+  after   Owned interface name or file path (candidate)
 
-Exit status is non-zero only when a plugin fails to run or input is invalid.
-breaking=true does not fail the command.
+Both documents must share the same interface type (OpenAPI or JSON Schema).
+File paths work even without an ifc.yaml project.
+
+Prints plugin id and breaking=true/false. Exit status is non-zero only when a
+plugin fails or input is invalid; breaking changes do not fail the command.
 `,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {

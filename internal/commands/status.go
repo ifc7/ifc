@@ -10,11 +10,16 @@ import (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show whether owned interfaces differ from the local manifest.",
+	Short: "Show owned interface status vs the local manifest",
 	Long: `
-Compare each owned interface file on disk against the latest revision stored in
-the local .ifc/manifest.json and report clean, modified, new, or missing status.
+Compare each owned interface file on disk to the latest revision in
+.ifc/manifest.json.
+
+Reports status, name, slug, and path for each owned interface.
+Status is one of: clean, modified, new, missing, or error.
+Local only; does not contact the hub. Does not take arguments.
 `,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()
 		if err != nil {

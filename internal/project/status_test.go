@@ -2,6 +2,7 @@ package project
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
@@ -27,6 +28,7 @@ func TestProject_Status(t *testing.T) {
 		config   Config
 		manifest Manifest
 		wantKind InterfaceStatusKind
+		wantSlug string
 	}{
 		"clean": {
 			config: Config{
@@ -37,6 +39,7 @@ func TestProject_Status(t *testing.T) {
 					"api": {
 						Interface: client.Interface{
 							Name: "api",
+							Slug: "api-slug",
 							LatestRevision: &client.InterfaceRevision{
 								Checksum: checksum,
 							},
@@ -45,6 +48,7 @@ func TestProject_Status(t *testing.T) {
 				},
 			},
 			wantKind: StatusClean,
+			wantSlug: "api-slug",
 		},
 		"modified": {
 			config: Config{
@@ -88,6 +92,7 @@ func TestProject_Status(t *testing.T) {
 						Interface: client.Interface{
 							Id:   "interface_abc",
 							Name: "api",
+							Slug: "api",
 							LatestRevision: &client.InterfaceRevision{
 								Checksum: checksum,
 							},
@@ -96,6 +101,7 @@ func TestProject_Status(t *testing.T) {
 				},
 			},
 			wantKind: StatusClean,
+			wantSlug: "api",
 		},
 		"clean via canonical path ref": {
 			config: Config{
@@ -103,10 +109,11 @@ func TestProject_Status(t *testing.T) {
 			},
 			manifest: Manifest{
 				Interfaces: map[string]*ManifestInterface{
-					"interface_abc": {
+					"/i/@user/api": {
 						Interface: client.Interface{
 							Id:           "interface_abc",
 							Name:         "api",
+							Slug:         "api",
 							CanonicalUrl: "/i/@user/api",
 							LatestRevision: &client.InterfaceRevision{
 								Checksum: checksum,
@@ -116,6 +123,7 @@ func TestProject_Status(t *testing.T) {
 				},
 			},
 			wantKind: StatusClean,
+			wantSlug: "api",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -133,6 +141,9 @@ func TestProject_Status(t *testing.T) {
 			if statuses[0].Kind != tc.wantKind {
 				t.Fatalf("expected kind %q, got %q (%s)", tc.wantKind, statuses[0].Kind, statuses[0].Detail)
 			}
+			if statuses[0].Slug != tc.wantSlug {
+				t.Fatalf("expected slug %q, got %q", tc.wantSlug, statuses[0].Slug)
+			}
 		})
 	}
 }
@@ -141,6 +152,33 @@ func TestFormatStatusReport_empty(t *testing.T) {
 	got := FormatStatusReport(nil)
 	if got != "No owned interfaces tracked in ifc.yaml.\n" {
 		t.Fatalf("unexpected report: %q", got)
+	}
+}
+
+func TestFormatStatusReport_includesSlugColumn(t *testing.T) {
+	got := FormatStatusReport([]InterfaceStatus{
+		{Name: "Petstore API", Slug: "petstore", Path: "api.yaml", Kind: StatusClean},
+		{Name: "new-api", Path: "new.yaml", Kind: StatusNew, Detail: "not in local manifest"},
+	})
+	if !strings.Contains(got, "slug") {
+		t.Fatalf("expected slug header, got %q", got)
+	}
+	if !strings.Contains(got, "petstore") {
+		t.Fatalf("expected slug value, got %q", got)
+	}
+	foundPlaceholder := false
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.Contains(line, "new-api") {
+			continue
+		}
+		fields := strings.Fields(line)
+		// status, name, slug, path, ...
+		if len(fields) >= 4 && fields[2] == "-" {
+			foundPlaceholder = true
+		}
+	}
+	if !foundPlaceholder {
+		t.Fatalf("expected slug placeholder for new-api, got %q", got)
 	}
 }
 

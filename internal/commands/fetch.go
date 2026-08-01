@@ -10,11 +10,14 @@ import (
 
 var fetchCmd = &cobra.Command{
 	Use:   "fetch",
-	Short: "Fetch copies of external interfaces you are tracking from a remote hub.",
+	Short: "Pull tracked interfaces from the hub into the local manifest",
 	Long: `
-Fetch copies of external interfaces you are tracking from a remote hub.
+Fetch interface metadata and revisions from the hub into .ifc/manifest.json
+for every tracked entry in ifc.yaml (use list, and owned interfaces with a ref).
 
+Requires login. Does not take arguments.
 `,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()
 		if err != nil {

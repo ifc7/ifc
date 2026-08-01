@@ -9,11 +9,16 @@ import (
 )
 
 var useCmd = &cobra.Command{
-	Use:   "use",
-	Short: "Use an externally owned interface in your project.",
+	Use:   "use <ref>",
+	Short: "Track a remote hub interface in this project",
 	Long: `
-Use an externally owned interface in your project.
+Add an externally owned interface from the hub to the use list in ifc.yaml.
 
+Arguments:
+  ref  Hub reference: ifc7.dev/i/<owner>/<name> or interface_<id>
+
+Resolves the ref against the hub (requires login). Run ifc fetch to pull
+metadata into .ifc/manifest.json.
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
