@@ -12,10 +12,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ifc7/ifc/internal/client"
 	"github.com/ifc7/ifc/internal/pkg/fileio"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 type NewInterface struct {
@@ -194,33 +194,30 @@ func (m *interfaceOwnerModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *interfaceOwnerModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Choose owner for interface: %s\n\n", m.interfaceName)
+	fmt.Fprint(&builder, ui.ScreenTitle("Choose owner"))
+	fmt.Fprintln(&builder, ui.Field("Interface", m.interfaceName))
+	fmt.Fprintln(&builder)
 
 	switch m.step {
 	case ownerStepSelect:
-		fmt.Fprintf(&builder, "Select owner:\n\n")
+		fmt.Fprintln(&builder, ui.Section("Select owner"))
+		fmt.Fprintln(&builder)
 		for i, option := range m.options {
-			cursor := " "
-			if i == m.cursor {
-				cursor = ">"
-			}
-			check := " "
-			if i == m.cursor {
-				check = "x"
-			}
 			kind := option.Kind
 			if kind == "" {
 				kind = "owner"
 			}
-			fmt.Fprintf(&builder, "%s [%s] %s (%s)\n", cursor, check, option.Label, kind)
+			label := fmt.Sprintf("%s (%s)", option.Label, kind)
+			fmt.Fprintln(&builder, ui.ListRow(i == m.cursor, i == m.cursor, label))
 		}
-		fmt.Fprintf(&builder, "\nUse ↑/↓ and press Enter to continue. Press q to cancel.")
+		fmt.Fprint(&builder, ui.KeyHints("\n↑/↓ move  ·  enter continue  ·  q cancel"))
 	case ownerStepConfirm:
 		selected := m.options[m.cursor]
-		fmt.Fprintf(&builder, "Confirm owner:\n\n")
-		fmt.Fprintf(&builder, "Interface: %s\n", m.interfaceName)
-		fmt.Fprintf(&builder, "Owner: %s (%s)\n", selected.Label, selected.Kind)
-		fmt.Fprintf(&builder, "\nPress Enter to submit, Backspace to edit, or q to cancel.")
+		fmt.Fprintln(&builder, ui.Section("Confirm owner"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, ui.Field("Interface", m.interfaceName))
+		fmt.Fprintln(&builder, ui.Field("Owner", fmt.Sprintf("%s (%s)", selected.Label, selected.Kind)))
+		fmt.Fprint(&builder, ui.KeyHints("\nenter submit  ·  backspace edit  ·  q cancel"))
 	}
 
 	return builder.String()
@@ -246,16 +243,16 @@ type newInterfaceCommitModel struct {
 func newNewInterfaceCommitModel(name string, ifaceType client.InterfaceType) *newInterfaceCommitModel {
 	descriptionInput := textinput.New()
 	descriptionInput.Placeholder = "Optional description"
-	descriptionInput.Prompt = "> "
 	descriptionInput.CharLimit = 280
 	descriptionInput.Width = 60
+	ui.ApplyTextInput(&descriptionInput)
 	descriptionInput.Focus()
 
 	notesInput := textinput.New()
 	notesInput.Placeholder = "Optional revision notes"
-	notesInput.Prompt = "> "
 	notesInput.CharLimit = 280
 	notesInput.Width = 60
+	ui.ApplyTextInput(&notesInput)
 
 	return &newInterfaceCommitModel{
 		name:             name,
@@ -356,17 +353,22 @@ func (m *newInterfaceCommitModel) applyFocus() {
 
 func (m *newInterfaceCommitModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Commit new interface: %s (%s)\n\n", m.name, m.ifaceType)
+	fmt.Fprint(&builder, ui.ScreenTitle("Commit new interface"))
+	fmt.Fprintln(&builder, ui.Field("Name", m.name))
+	fmt.Fprintln(&builder, ui.Field("Type", string(m.ifaceType)))
+	fmt.Fprintln(&builder)
 
 	switch m.step {
 	case newIfcCommitStepDescription:
-		fmt.Fprintf(&builder, "Description (optional):\n\n")
+		fmt.Fprintln(&builder, ui.Section("Description (optional)"))
+		fmt.Fprintln(&builder)
 		fmt.Fprint(&builder, m.descriptionInput.View())
-		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 	case newIfcCommitStepNotes:
-		fmt.Fprintf(&builder, "Initial revision notes (optional):\n\n")
+		fmt.Fprintln(&builder, ui.Section("Initial revision notes (optional)"))
+		fmt.Fprintln(&builder)
 		fmt.Fprint(&builder, m.notesInput.View())
-		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 	case newIfcCommitStepConfirm:
 		description := strings.TrimSpace(m.descriptionInput.Value())
 		if description == "" {
@@ -376,12 +378,13 @@ func (m *newInterfaceCommitModel) View() string {
 		if notes == "" {
 			notes = "(none)"
 		}
-		fmt.Fprintf(&builder, "Confirm details:\n\n")
-		fmt.Fprintf(&builder, "Name: %s\n", m.name)
-		fmt.Fprintf(&builder, "Type: %s\n", m.ifaceType)
-		fmt.Fprintf(&builder, "Description: %s\n", description)
-		fmt.Fprintf(&builder, "Revision notes: %s\n", notes)
-		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit.")
+		fmt.Fprintln(&builder, ui.Section("Confirm details"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, ui.Field("Name", m.name))
+		fmt.Fprintln(&builder, ui.Field("Type", string(m.ifaceType)))
+		fmt.Fprintln(&builder, ui.Field("Description", description))
+		fmt.Fprintln(&builder, ui.Field("Revision notes", notes))
+		fmt.Fprint(&builder, ui.KeyHints("\nenter submit  ·  backspace edit"))
 	}
 
 	return builder.String()
@@ -404,9 +407,9 @@ type newRevisionCommitModel struct {
 func newNewRevisionCommitModel(name string) *newRevisionCommitModel {
 	notesInput := textinput.New()
 	notesInput.Placeholder = "Optional revision notes"
-	notesInput.Prompt = "> "
 	notesInput.CharLimit = 280
 	notesInput.Width = 60
+	ui.ApplyTextInput(&notesInput)
 	notesInput.Focus()
 
 	return &newRevisionCommitModel{
@@ -487,22 +490,26 @@ func (m *newRevisionCommitModel) applyFocus() {
 
 func (m *newRevisionCommitModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Commit new revision: %s\n\n", m.name)
+	fmt.Fprint(&builder, ui.ScreenTitle("Commit new revision"))
+	fmt.Fprintln(&builder, ui.Field("Interface", m.name))
+	fmt.Fprintln(&builder)
 
 	switch m.step {
 	case newRevCommitStepNotes:
-		fmt.Fprintf(&builder, "Revision notes for %s (optional):\n\n", m.name)
+		fmt.Fprintln(&builder, ui.Section("Revision notes (optional)"))
+		fmt.Fprintln(&builder)
 		fmt.Fprint(&builder, m.notesInput.View())
-		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 	case newRevCommitStepConfirm:
 		notes := strings.TrimSpace(m.notesInput.Value())
 		if notes == "" {
 			notes = "(none)"
 		}
-		fmt.Fprintf(&builder, "Confirm details:\n\n")
-		fmt.Fprintf(&builder, "Interface: %s\n", m.name)
-		fmt.Fprintf(&builder, "Notes: %s\n", notes)
-		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit.")
+		fmt.Fprintln(&builder, ui.Section("Confirm details"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, ui.Field("Interface", m.name))
+		fmt.Fprintln(&builder, ui.Field("Notes", notes))
+		fmt.Fprint(&builder, ui.KeyHints("\nenter submit  ·  backspace edit"))
 	}
 
 	return builder.String()
@@ -570,9 +577,9 @@ func newPushChangesModel(changes []InterfaceChange) *pushChangesModel {
 	}
 	notesInput := textinput.New()
 	notesInput.Placeholder = "Optional revision notes"
-	notesInput.Prompt = "> "
 	notesInput.CharLimit = 280
 	notesInput.Width = 60
+	ui.ApplyTextInput(&notesInput)
 	return &pushChangesModel{
 		step:       pushStepSelectChanges,
 		items:      items,
@@ -737,35 +744,30 @@ func (m *pushChangesModel) applyFocus() {
 
 func (m *pushChangesModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Push changes to server\n\n")
+	fmt.Fprint(&builder, ui.ScreenTitle("Push changes"))
 
 	switch m.step {
 	case pushStepSelectChanges:
-		fmt.Fprintf(&builder, "Select changes to push (Space to toggle):\n\n")
+		fmt.Fprintln(&builder, ui.Section("Select changes to push (Space to toggle)"))
+		fmt.Fprintln(&builder)
 		for i, item := range m.items {
-			cursor := " "
-			if i == m.cursor {
-				cursor = ">"
-			}
-			check := " "
-			if item.selected {
-				check = "x"
-			}
-			fmt.Fprintf(&builder, "%s [%s] %s\n", cursor, check, item.change.Name)
+			fmt.Fprintln(&builder, ui.ListRow(i == m.cursor, item.selected, item.change.Name))
 		}
-		fmt.Fprintf(&builder, "\nUse ↑/↓ to move, Space to toggle, Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n↑/↓ move  ·  space toggle  ·  enter continue"))
 	case pushStepAddNotes:
 		selected := m.getSelectedItems()
 		if len(selected) == 0 {
-			fmt.Fprintf(&builder, "No changes selected.\n")
+			fmt.Fprintln(&builder, ui.Apply(ui.Warning, "No changes selected."))
 		} else {
 			current := selected[m.notesIndex]
-			fmt.Fprintf(&builder, "Notes for %s (%d of %d):\n\n", current.change.Name, m.notesIndex+1, len(selected))
+			fmt.Fprintln(&builder, ui.Section(fmt.Sprintf("Notes for %s (%d of %d)", current.change.Name, m.notesIndex+1, len(selected))))
+			fmt.Fprintln(&builder)
 			fmt.Fprint(&builder, m.notesInput.View())
-			fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+			fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 		}
 	case pushStepConfirm:
-		fmt.Fprintf(&builder, "Confirm push:\n\n")
+		fmt.Fprintln(&builder, ui.Section("Confirm push"))
+		fmt.Fprintln(&builder)
 		for _, item := range m.items {
 			if !item.selected {
 				continue
@@ -774,17 +776,16 @@ func (m *pushChangesModel) View() string {
 			if notes == "" {
 				notes = "(none)"
 			}
-			fmt.Fprintf(&builder, "  %s - notes: %s\n", item.change.Name, notes)
+			fmt.Fprintln(&builder, ui.Field(item.change.Name, "notes: "+notes))
 		}
-		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit notes.")
+		fmt.Fprint(&builder, ui.KeyHints("\nenter submit  ·  backspace edit notes"))
 	}
 
 	if m.errMsg != "" {
-		fmt.Fprintf(&builder, "\n\n")
-		fmt.Fprint(&builder, m.errMsg)
+		fmt.Fprintf(&builder, "\n\n%s", ui.Apply(ui.Error, m.errMsg))
 	}
 
-	fmt.Fprintf(&builder, "\n\nPress q to quit.\n")
+	fmt.Fprint(&builder, ui.KeyHints("\n\nq quit"))
 	return builder.String()
 }
 
@@ -793,7 +794,7 @@ func createNewInterface(ctx context.Context, cl *client.ClientWithResponses, fil
 	if err != nil {
 		return fmt.Errorf("error reading file: %w", err)
 	}
-	fmt.Println("Interface does not exist on the server, creating new interface...")
+	ui.Infoln("Interface does not exist on the server, creating new interface...")
 	userID, err := cl.CurrentUserID(ctx)
 	if err != nil {
 		return err
@@ -833,16 +834,16 @@ func runBubleTeaNewInterfaceTui() newInterfaceTuiResponse {
 	program := tea.NewProgram(model)
 	finalModel, err := program.Run()
 	if err != nil {
-		fmt.Println("Failed to start TUI:", err)
+		ui.Errorln("Failed to start TUI: %v", err)
 		os.Exit(1)
 	}
 	result, ok := finalModel.(*newInterfaceModel)
 	if !ok {
-		fmt.Println("Unexpected TUI result type")
+		ui.Errorln("Unexpected TUI result type")
 		os.Exit(1)
 	}
 	if result.cancelled {
-		fmt.Println("Cancelled.")
+		ui.Warnln("Cancelled.")
 		os.Exit(1)
 	}
 	name := strings.TrimSpace(result.nameInput.Value())
@@ -886,15 +887,15 @@ type newInterfaceModel struct {
 func newNewInterfaceModel() *newInterfaceModel {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "e.g. Billing API"
-	nameInput.Prompt = "> "
 	nameInput.CharLimit = 120
 	nameInput.Width = 60
+	ui.ApplyTextInput(&nameInput)
 
 	descriptionInput := textinput.New()
 	descriptionInput.Placeholder = "Optional description"
-	descriptionInput.Prompt = "> "
 	descriptionInput.CharLimit = 280
 	descriptionInput.Width = 60
+	ui.ApplyTextInput(&descriptionInput)
 
 	return &newInterfaceModel{
 		step: stepSelectType,
@@ -1032,49 +1033,45 @@ func (m *newInterfaceModel) applyFocus() {
 
 func (m *newInterfaceModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Create a new interface\n\n")
+	fmt.Fprint(&builder, ui.ScreenTitle("Create a new interface"))
 
 	switch m.step {
 	case stepSelectType:
-		fmt.Fprintf(&builder, "Select interface type:\n\n")
+		fmt.Fprintln(&builder, ui.Section("Select interface type"))
+		fmt.Fprintln(&builder)
 		for i, option := range m.typeOptions {
-			cursor := " "
-			if i == m.typeIndex {
-				cursor = ">"
-			}
-			check := " "
-			if i == m.typeIndex {
-				check = "x"
-			}
-			fmt.Fprintf(&builder, "%s [%s] %s - %s\n", cursor, check, option.Label, option.Help)
+			label := fmt.Sprintf("%s — %s", option.Label, option.Help)
+			fmt.Fprintln(&builder, ui.ListRow(i == m.typeIndex, i == m.typeIndex, label))
 		}
-		fmt.Fprintf(&builder, "\nUse ↑/↓ and press Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n↑/↓ move  ·  enter continue"))
 	case stepName:
-		fmt.Fprintf(&builder, "Interface name (required):\n\n")
+		fmt.Fprintln(&builder, ui.Section("Interface name (required)"))
+		fmt.Fprintln(&builder)
 		fmt.Fprint(&builder, m.nameInput.View())
-		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 	case stepDescription:
-		fmt.Fprintf(&builder, "Description (optional):\n\n")
+		fmt.Fprintln(&builder, ui.Section("Description (optional)"))
+		fmt.Fprintln(&builder)
 		fmt.Fprint(&builder, m.descriptionInput.View())
-		fmt.Fprintf(&builder, "\n\nPress Enter to continue.")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nenter continue"))
 	case stepConfirm:
-		fmt.Fprintf(&builder, "Confirm details:\n\n")
-		fmt.Fprintf(&builder, "Type: %s\n", m.typeOptions[m.typeIndex].Label)
-		fmt.Fprintf(&builder, "Name: %s\n", strings.TrimSpace(m.nameInput.Value()))
 		description := strings.TrimSpace(m.descriptionInput.Value())
 		if description == "" {
 			description = "(none)"
 		}
-		fmt.Fprintf(&builder, "Description: %s\n", description)
-		fmt.Fprintf(&builder, "\nPress Enter to submit or Backspace to edit.")
+		fmt.Fprintln(&builder, ui.Section("Confirm details"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, ui.Field("Type", m.typeOptions[m.typeIndex].Label))
+		fmt.Fprintln(&builder, ui.Field("Name", strings.TrimSpace(m.nameInput.Value())))
+		fmt.Fprintln(&builder, ui.Field("Description", description))
+		fmt.Fprint(&builder, ui.KeyHints("\nenter submit  ·  backspace edit"))
 	}
 
 	if m.errMsg != "" {
-		fmt.Fprintf(&builder, "\n\n")
-		fmt.Fprint(&builder, m.errMsg)
+		fmt.Fprintf(&builder, "\n\n%s", ui.Apply(ui.Error, m.errMsg))
 	}
 
-	fmt.Fprintf(&builder, "\n\nPress q to quit.")
+	fmt.Fprint(&builder, ui.KeyHints("\n\nq quit"))
 	return builder.String()
 }
 
@@ -1164,9 +1161,9 @@ func newScanAddModel(candidates []ScanCandidate) *scanAddModel {
 	}
 	nameInput := textinput.New()
 	nameInput.Placeholder = "interface name"
-	nameInput.Prompt = "> "
 	nameInput.CharLimit = 120
 	nameInput.Width = 60
+	ui.ApplyTextInput(&nameInput)
 	// Disable suggestion bindings so ↑/↓ are available for list navigation.
 	nameInput.KeyMap.NextSuggestion = key.NewBinding()
 	nameInput.KeyMap.PrevSuggestion = key.NewBinding()
@@ -1550,66 +1547,60 @@ func (m *scanAddModel) listWindow() (start, end int) {
 
 func (m *scanAddModel) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Add discovered interfaces to ifc.yaml\n\n")
-
-	selectedStyle := lipgloss.NewStyle().Reverse(true)
-	dimStyle := lipgloss.NewStyle().Faint(true)
+	fmt.Fprint(&builder, ui.ScreenTitle("Add discovered interfaces"))
 
 	switch m.step {
 	case scanStepSelect:
-		fmt.Fprintf(&builder, "Select interfaces to add (%d found, Space to toggle):\n\n", len(m.items))
+		fmt.Fprintln(&builder, ui.Section(fmt.Sprintf("Select interfaces to add (%d found, Space to toggle)", len(m.items))))
+		fmt.Fprintln(&builder)
 		start, end := m.listWindow()
 		if start > 0 {
-			fmt.Fprintln(&builder, dimStyle.Render(fmt.Sprintf("  ↑ %d more above", start)))
+			fmt.Fprintln(&builder, ui.KeyHints(fmt.Sprintf("  ↑ %d more above", start)))
 		}
 		for i := start; i < end; i++ {
 			item := m.items[i]
-			check := " "
-			if item.selected {
-				check = "x"
-			}
-			line := fmt.Sprintf("  [%s] %s  (%s)", check, item.candidate.Path, item.candidate.Type)
-			if i == m.cursor {
-				line = selectedStyle.Render(">" + line[1:])
-			}
-			fmt.Fprintln(&builder, line)
+			label := fmt.Sprintf("%s  (%s)", item.candidate.Path, item.candidate.Type)
+			fmt.Fprintln(&builder, ui.ListRow(i == m.cursor, item.selected, label))
 		}
 		if end < len(m.items) {
-			fmt.Fprintln(&builder, dimStyle.Render(fmt.Sprintf("  ↓ %d more below", len(m.items)-end)))
+			fmt.Fprintln(&builder, ui.KeyHints(fmt.Sprintf("  ↓ %d more below", len(m.items)-end)))
 		}
-		fmt.Fprintf(&builder, "\n%d–%d of %d  ·  j/k or ↑/↓ move · pgup/pgdn page · Space toggle · Enter continue",
-			start+1, end, len(m.items))
+		fmt.Fprint(&builder, ui.KeyHints(fmt.Sprintf(
+			"\n%d–%d of %d  ·  j/k or ↑/↓ move  ·  pgup/pgdn page  ·  space toggle  ·  enter continue",
+			start+1, end, len(m.items))))
 	case scanStepName:
 		selected := m.selectedItems()
 		if len(selected) == 0 {
-			fmt.Fprintf(&builder, "No interfaces selected.\n")
+			fmt.Fprintln(&builder, ui.Apply(ui.Warning, "No interfaces selected."))
 		} else {
 			current := selected[m.nameIndex]
-			fmt.Fprintf(&builder, "Name for %s (%d of %d):\n\n", current.candidate.Path, m.nameIndex+1, len(selected))
+			fmt.Fprintln(&builder, ui.Section(fmt.Sprintf("Name for %s (%d of %d)", current.candidate.Path, m.nameIndex+1, len(selected))))
+			fmt.Fprintln(&builder)
 			fmt.Fprint(&builder, m.nameInput.View())
-			fmt.Fprintf(&builder, "\n\n↑/↓ or tab switch item · Enter continue")
+			fmt.Fprint(&builder, ui.KeyHints("\n\n↑/↓ or tab switch item  ·  enter continue"))
 		}
 	case scanStepConfirm:
-		fmt.Fprintf(&builder, "Confirm additions:\n\n")
+		fmt.Fprintln(&builder, ui.Section("Confirm additions"))
+		fmt.Fprintln(&builder)
 		for _, item := range m.items {
 			if !item.selected {
 				continue
 			}
-			fmt.Fprintf(&builder, "  %s  %s  (%s)\n", item.name, item.candidate.Path, item.candidate.Type)
+			fmt.Fprintln(&builder, ui.Field(item.name, fmt.Sprintf("%s (%s)", item.candidate.Path, item.candidate.Type)))
 		}
-		fmt.Fprintf(&builder, "\nEnter to add · Backspace to edit names")
+		fmt.Fprint(&builder, ui.KeyHints("\nenter add  ·  backspace edit names"))
 	}
 
 	if m.errMsg != "" {
-		fmt.Fprintf(&builder, "\n\n%s", m.errMsg)
+		fmt.Fprintf(&builder, "\n\n%s", ui.Apply(ui.Error, m.errMsg))
 	}
 	if m.debugKeys && m.lastKey != "" {
-		fmt.Fprintf(&builder, "\n\ndebug: %s", m.lastKey)
+		fmt.Fprintf(&builder, "\n\n%s", ui.KeyHints("debug: "+m.lastKey))
 	}
 	if m.step == scanStepName {
-		fmt.Fprintf(&builder, "\n\nctrl+c to quit")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nctrl+c quit"))
 	} else {
-		fmt.Fprintf(&builder, "\n\nq to quit")
+		fmt.Fprint(&builder, ui.KeyHints("\n\nq quit"))
 	}
 	return builder.String()
 }

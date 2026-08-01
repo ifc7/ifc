@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ifc7/ifc/internal"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 //go:generate oapi-codegen --config=oapi.config.yaml ../../../interfaces/device_auth/device_auth.yaml
@@ -96,12 +97,17 @@ func (s *CredentialsService) Login(ctx context.Context) error {
 		return fmt.Errorf("no verification uri present")
 	}
 
-	fmt.Println("\nTo log in, open this URL in your browser:")
-	fmt.Println(*codes.VerificationUriComplete)
-	fmt.Printf("\nEnter the code: %s\n", codes.UserCode)
-	fmt.Println("\nWaiting for authorization...")
+	fmt.Println()
+	fmt.Println(ui.ScreenTitle("Login"))
+	fmt.Println(ui.Section("Open this URL in your browser:"))
+	fmt.Println(ui.Apply(ui.Primary, *codes.VerificationUriComplete))
+	fmt.Println()
+	fmt.Println(ui.Field("Code", ui.Apply(ui.Emphasis, codes.UserCode)))
+	fmt.Println()
 
+	stopSpinner := ui.StartSpinner("Waiting for authorization...")
 	tokens, err := s.pollForTokens(ctx, codes.DeviceCode, codes.Interval)
+	stopSpinner()
 	if err != nil {
 		return err
 	}

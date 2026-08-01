@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var scanCmd = &cobra.Command{
@@ -38,9 +39,7 @@ Only updates ifc.yaml; run ifc commit to snapshot selected files.
 		if err := proj.Write(); err != nil {
 			return fmt.Errorf("error writing project changes: %w", err)
 		}
-		for _, message := range messages {
-			fmt.Println(message)
-		}
+		ui.PrintMessages(messages)
 		return nil
 	},
 }

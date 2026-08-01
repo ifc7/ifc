@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var lintCmd = &cobra.Command{
@@ -54,9 +55,9 @@ func printLint(path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n", result.Target)
-	fmt.Printf("  plugin: %s\n", result.PluginID)
-	fmt.Printf("  score:  %d\n", result.Output.Score)
+	fmt.Println(ui.Apply(ui.Emphasis, result.Target))
+	fmt.Printf("  %s %s\n", ui.KeyHints("plugin:"), result.PluginID)
+	fmt.Printf("  %s %s\n", ui.KeyHints("score: "), ui.FormatScore(result.Output.Score))
 	if result.Output.Raw != "" {
 		fmt.Printf("\n%s", result.Output.Raw)
 	}

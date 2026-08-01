@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/pkg/auth"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var loginCmd = &cobra.Command{
@@ -30,7 +31,7 @@ push. Prints a URL to open and complete authentication.
 		if err != nil {
 			return fmt.Errorf("failed to login: %w", err)
 		}
-		fmt.Println("\nLogged in successfully.")
+		ui.Successln("Logged in successfully.")
 		return nil
 	},
 }

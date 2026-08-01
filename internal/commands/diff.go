@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var diffCmd = &cobra.Command{
@@ -31,7 +32,7 @@ Prints nothing when the file matches the manifest. Local only.
 			return err
 		}
 		if diff != "" {
-			fmt.Print(diff)
+			fmt.Print(ui.ColorUnifiedDiff(diff))
 		}
 		return nil
 	},

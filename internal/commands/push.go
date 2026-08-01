@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var pushCmd = &cobra.Command{
@@ -39,9 +40,7 @@ creates it on the hub and prompts for the owner (user or organization).
 			}
 			return fmt.Errorf("error writing project changes: %w", writeErr)
 		}
-		for _, message := range messages {
-			fmt.Println(message)
-		}
+		ui.PrintMessages(messages)
 		if pushErr != nil {
 			return fmt.Errorf("error pushing interfaces: %w", pushErr)
 		}

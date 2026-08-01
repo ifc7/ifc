@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var checkoutForce bool
@@ -36,9 +37,7 @@ unchanged. Files with local modifications are skipped unless --force is set.
 			Targets: args,
 			Force:   checkoutForce,
 		})
-		for _, message := range messages {
-			fmt.Println(message)
-		}
+		ui.PrintMessages(messages)
 		if err != nil {
 			return err
 		}

@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/ifc7/ifc/internal/pkg/fileio"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 // InterfaceStatusKind describes how an owned interface compares to the local manifest.
@@ -129,11 +128,6 @@ func (p *Project) localManifestKeyForOwned(own Owned) (string, bool) {
 	return "", false
 }
 
-var (
-	statusKindNew = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))  // green
-	statusKindMod = lipgloss.NewStyle().Foreground(lipgloss.Color("129")) // purple
-)
-
 // FormatStatusReport renders a human-readable status report.
 func FormatStatusReport(statuses []InterfaceStatus) string {
 	if len(statuses) == 0 {
@@ -153,25 +147,25 @@ func FormatStatusReport(statuses []InterfaceStatus) string {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintln(&b, "Owned interface status:")
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "  %-10s %-*s %-*s %s\n", "status", nameWidth, "name", slugWidth, "slug", "path")
+	fmt.Fprint(&b, ui.ScreenTitle("Owned interface status"))
+	header := fmt.Sprintf("  %-10s %-*s %-*s %s", "status", nameWidth, "name", slugWidth, "slug", "path")
+	fmt.Fprintln(&b, ui.KeyHints(header))
 	counts := map[InterfaceStatusKind]int{}
 	for _, st := range statuses {
 		counts[st.Kind]++
-		kind := formatStatusKind(st.Kind)
+		kind := ui.StatusKind(string(st.Kind))
 		slug := st.Slug
 		if slug == "" {
 			slug = "-"
 		}
 		line := fmt.Sprintf("  %s %-*s %-*s %s", kind, nameWidth, st.Name, slugWidth, slug, st.Path)
 		if st.Detail != "" && st.Kind != StatusClean {
-			line = fmt.Sprintf("%s  (%s)", line, st.Detail)
+			line = fmt.Sprintf("%s  (%s)", line, ui.KeyHints(st.Detail))
 		}
 		fmt.Fprintln(&b, line)
 	}
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "%d owned interface(s): %d clean, %d modified, %d new, %d missing, %d error\n",
+	summary := fmt.Sprintf("%d owned interface(s): %d clean, %d modified, %d new, %d missing, %d error",
 		len(statuses),
 		counts[StatusClean],
 		counts[StatusModified],
@@ -179,17 +173,6 @@ func FormatStatusReport(statuses []InterfaceStatus) string {
 		counts[StatusMissing],
 		counts[StatusError],
 	)
+	fmt.Fprintln(&b, ui.KeyHints(summary))
 	return b.String()
-}
-
-func formatStatusKind(kind InterfaceStatusKind) string {
-	padded := fmt.Sprintf("%-10s", kind)
-	switch kind {
-	case StatusNew:
-		return statusKindNew.Render(padded)
-	case StatusModified:
-		return statusKindMod.Render(padded)
-	default:
-		return padded
-	}
 }

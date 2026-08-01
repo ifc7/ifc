@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal/project"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 var compareCmd = &cobra.Command{
@@ -42,10 +43,10 @@ plugin fails or input is invalid; breaking changes do not fail the command.
 		if err != nil {
 			return err
 		}
-		fmt.Printf("before: %s\n", result.Before)
-		fmt.Printf("after:  %s\n", result.After)
-		fmt.Printf("plugin: %s\n", result.PluginID)
-		fmt.Printf("breaking: %v\n", result.Output.Breaking)
+		fmt.Printf("%s %s\n", ui.KeyHints("before:  "), result.Before)
+		fmt.Printf("%s %s\n", ui.KeyHints("after:   "), result.After)
+		fmt.Printf("%s %s\n", ui.KeyHints("plugin:  "), result.PluginID)
+		fmt.Printf("%s %s\n", ui.KeyHints("breaking:"), ui.FormatBreaking(result.Output.Breaking))
 		if result.Output.Raw != "" {
 			fmt.Printf("\n%s", result.Output.Raw)
 		}
