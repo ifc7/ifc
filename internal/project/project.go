@@ -457,13 +457,13 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 		if err != nil {
 			return fmt.Errorf("error detecting interface type for %s: %w", own.Path, err)
 		}
+		userID, err := p.client.CurrentUserID(ctx)
+		if err != nil {
+			return fmt.Errorf("not authenticated: please run 'ifc login' first")
+		}
 		newIfc, err := promptNewInterfaceCommit(ctx, own.Name, specType)
 		if err != nil {
 			return fmt.Errorf("error prompting for new interface: %w", err)
-		}
-		userID, err := p.client.CurrentUserID(ctx)
-		if err != nil {
-			return err
 		}
 		revision := client.InterfaceRevision{
 			Checksum:      sha,
@@ -501,13 +501,13 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 			p.manifest.ensureInterfaceKey(manifestIfc)
 		}
 		if manifestIfc.LatestRevision == nil || manifestIfc.LatestRevision.Checksum != sha {
+			userID, err := p.client.CurrentUserID(ctx)
+			if err != nil {
+				return fmt.Errorf("not authenticated: please run 'ifc login' first")
+			}
 			newRev, err := promptNewRevisionCommit(ctx, own.Name)
 			if err != nil {
 				return fmt.Errorf("error prompting for new revision: %w", err)
-			}
-			userID, err := p.client.CurrentUserID(ctx)
-			if err != nil {
-				return err
 			}
 			revision := client.InterfaceRevision{
 				Checksum:      sha,

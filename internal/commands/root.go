@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ifc7/ifc/internal"
+	"github.com/ifc7/ifc/internal/ui"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -25,6 +26,8 @@ Build Version: %s
 Git Commit: %s
 Build Time: %s`,
 		internal.BuildVersion, internal.GitCommit, internal.BuildTime),
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -32,6 +35,7 @@ Build Time: %s`,
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
+		fmt.Println(ui.Apply(ui.Error, fmt.Sprintf("Error: %v", err)))
 		os.Exit(1)
 	}
 }

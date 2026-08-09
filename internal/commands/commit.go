@@ -26,7 +26,7 @@ Does not push to the hub; run ifc push afterward. Does not take arguments.
 		}
 		err = proj.Commit(cmd.Context(), project.CommitParams{})
 		if err != nil {
-			return fmt.Errorf("error committing interfaces: %w", err)
+			return err
 		}
 		err = proj.Write()
 		if err != nil {
