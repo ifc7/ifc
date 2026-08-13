@@ -1,6 +1,6 @@
 [<img src="docs/logo.svg" alt="IFC7 Logo" width="80">](https://ifc7.dev)
 
-# [ifc](https://ifc7.dev)
+# [ifc7](https://ifc7.dev) cli tool
 
 [![GitHub License](https://img.shields.io/github/license/ifc7/ifc)](LICENSE)
 [![ifc7.dev](https://img.shields.io/badge/hub-ifc7.dev-00D27F)](https://ifc7.dev)
