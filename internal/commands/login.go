@@ -15,14 +15,12 @@ var loginCmd = &cobra.Command{
 	Long: `
 Obtain API credentials for ifc7.dev via browser device login.
 
-Requires an initialized project (ifc.yaml). Stores credentials for fetch and
-push. Prints a URL to open and complete authentication.
+Can be run from any directory; does not require an initialized project.
+Stores credentials in the user config directory for fetch and push. Prints a
+URL to open and complete authentication.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !projectIsInitialized() {
-			return fmt.Errorf("project is not initialized")
-		}
 		client, err := auth.NewCredentialsService()
 		if err != nil {
 			return fmt.Errorf("failed to initialize credentials service: %w", err)
