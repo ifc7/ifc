@@ -3,11 +3,14 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,7 +238,21 @@ func TestProject_Use(t *testing.T) {
 	}
 }
 
+func stubCreateMissingFilePrompt(t *testing.T, err error) {
+	t.Helper()
+	orig := promptCreateMissingFile
+	promptCreateMissingFile = func(ctx context.Context, path, name string) error {
+		_ = ctx
+		_ = path
+		_ = name
+		return err
+	}
+	t.Cleanup(func() { promptCreateMissingFile = orig })
+}
+
 func TestProject_Add(t *testing.T) {
+	testutils.UseSandbox(t)
+
 	for name, tc := range map[string]struct {
 		config    Config
 		manifest  Manifest
@@ -294,6 +311,12 @@ func TestProject_Add(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			testutils.UseSandbox(t)
+			if tc.expErr == nil {
+				if err := os.WriteFile(tc.addParams.Path, []byte("{}"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			proj, err := projectWithMockClient(t, tc.config, tc.manifest, tc.setupMock)
 			if err != nil {
 				t.Fatal(err)
@@ -307,6 +330,106 @@ func TestProject_Add(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("creates missing file", func(t *testing.T) {
+		stubCreateMissingFilePrompt(t, nil)
+
+		proj, err := projectWithMockClient(t, Config{}, Manifest{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join("nested", "dir", "new-api.yaml")
+		err = proj.Add(t.Context(), AddParams{
+			Name: "new-api",
+			Path: path,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fileio.FileExists(path) {
+			t.Fatalf("expected file to be created at %s", path)
+		}
+		want := Config{
+			Own: []Owned{{Name: "new-api", Path: path}},
+		}
+		if !reflect.DeepEqual(proj.config, want) {
+			t.Fatalf("expected config %#v, got %#v", want, proj.config)
+		}
+	})
+
+	t.Run("cancelles missing file", func(t *testing.T) {
+		stubCreateMissingFilePrompt(t, fmt.Errorf("cancelled"))
+
+		proj, err := projectWithMockClient(t, Config{}, Manifest{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := "missing.yaml"
+		err = proj.Add(t.Context(), AddParams{
+			Name: "missing",
+			Path: path,
+		})
+		if err == nil || !strings.Contains(err.Error(), "cancelled") {
+			t.Fatalf("expected cancelled error, got %v", err)
+		}
+		if fileio.FileExists(path) {
+			t.Fatal("expected file not to be created after cancel")
+		}
+		if len(proj.config.Own) != 0 {
+			t.Fatalf("expected config unchanged, got %#v", proj.config)
+		}
+	})
+
+	t.Run("fails on existing directory", func(t *testing.T) {
+		if err := os.Mkdir("already-a-dir", 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		proj, err := projectWithMockClient(t, Config{}, Manifest{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = proj.Add(t.Context(), AddParams{
+			Name: "dir",
+			Path: "already-a-dir",
+		})
+		if err == nil || !strings.Contains(err.Error(), "is a directory") {
+			t.Fatalf("expected directory error, got %v", err)
+		}
+	})
+
+	t.Run("fails on name conflict", func(t *testing.T) {
+		promptCalled := false
+		orig := promptCreateMissingFile
+		promptCreateMissingFile = func(ctx context.Context, path, name string) error {
+			_ = ctx
+			_ = path
+			_ = name
+			promptCalled = true
+			return nil
+		}
+		t.Cleanup(func() { promptCreateMissingFile = orig })
+
+		proj, err := projectWithMockClient(t, Config{
+			Own: []Owned{{Name: "taken", Path: "existing.yaml"}},
+		}, Manifest{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = proj.Add(t.Context(), AddParams{
+			Name: "taken",
+			Path: "new.yaml",
+		})
+		if err != ErrNameExists {
+			t.Fatalf("expected ErrNameExists, got %v", err)
+		}
+		if promptCalled {
+			t.Fatal("should not prompt to create a file when the name already exists")
+		}
+		if fileio.FileExists("new.yaml") {
+			t.Fatal("should not create a file when add is rejected")
+		}
+	})
 }
 
 func TestProject_Fetch(t *testing.T) {

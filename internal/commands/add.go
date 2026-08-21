@@ -18,7 +18,9 @@ Arguments:
   path  Path to an OpenAPI or JSON Schema file
   name  Local name used by other ifc commands
 
-Only updates ifc.yaml. Run ifc commit to snapshot the file into the manifest.
+If the file does not exist, you will be asked to create it (including any
+missing folders). Only updates ifc.yaml. Run ifc commit to snapshot the file
+into the manifest.
 `,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {

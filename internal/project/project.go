@@ -31,6 +31,7 @@ var (
 	promptNewInterfaceCommit = tui.PromptNewInterfaceCommit
 	promptNewRevisionCommit  = tui.PromptNewRevisionCommit
 	promptInterfaceOwner     = tui.PromptInterfaceOwner
+	promptCreateMissingFile  = tui.PromptCreateMissingFile
 )
 
 // Project holds the state of an ifc7 managed project
@@ -197,7 +198,9 @@ type AddParams struct {
 	Ref  string
 }
 
-// Add adds a local interface to the project's "own" list in (ifc.yaml)
+// Add adds a local interface to the project's "own" list in (ifc.yaml).
+// If the file at Path does not exist, the user is asked to create it
+// (including any missing parent directories).
 func (p *Project) Add(ctx context.Context, params AddParams) error {
 	if params.Ref != "" {
 		resolved, err := p.resolveRef(ctx, params.Ref)
@@ -206,7 +209,42 @@ func (p *Project) Add(ctx context.Context, params AddParams) error {
 		}
 		params.Ref = resolved
 	}
+	// Reject name/path conflicts before creating a new file on disk.
+	if params.Name != "" && p.config.nameExists(params.Name) {
+		return ErrNameExists
+	}
+	if params.Path != "" && p.config.pathExists(params.Path) {
+		return ErrPathExists
+	}
+	if err := p.ensureOwnedFile(ctx, params); err != nil {
+		return err
+	}
 	return p.config.addOwnedInterface(params.Name, params.Path, params.Ref)
+}
+
+// ensureOwnedFile creates Path (and parent directories) after confirmation
+// when the file does not already exist.
+func (p *Project) ensureOwnedFile(ctx context.Context, params AddParams) error {
+	if params.Path == "" {
+		return nil
+	}
+	info, err := os.Stat(params.Path)
+	if err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("path %q is a directory", params.Path)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("error checking path %q: %w", params.Path, err)
+	}
+	if err := promptCreateMissingFile(ctx, params.Path, params.Name); err != nil {
+		return fmt.Errorf("error creating missing file: %w", err)
+	}
+	if err := fileio.WriteFile([]byte{}, params.Path); err != nil {
+		return fmt.Errorf("error creating file %q: %w", params.Path, err)
+	}
+	return nil
 }
 
 // FetchParams holds parameters that can be passed to the Fetch method
