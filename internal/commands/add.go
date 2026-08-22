@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -21,10 +22,21 @@ Arguments:
 Only updates ifc.yaml. Run ifc commit to snapshot the file into the manifest.
 `,
 	Args: cobra.ExactArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return []string{"yaml", "yml", "json"}, cobra.ShellCompDirectiveFilterFileExt
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()
 		if err != nil {
 			return fmt.Errorf("error loading project config: %w", err)
+		}
+		if _, err := os.Stat(args[0]); os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %s", args[0])
 		}
 		err = proj.Add(cmd.Context(), project.AddParams{
 			Path: args[0],
