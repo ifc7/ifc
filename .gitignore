@@ -41,5 +41,3 @@ bin/
 # test sandbox
 test/sandbox/
 
-# Ignore local test projects
-my-test-project/
