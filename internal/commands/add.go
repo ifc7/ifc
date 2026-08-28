@@ -23,6 +23,14 @@ missing folders). Only updates ifc.yaml. Run ifc commit to snapshot the file
 into the manifest.
 `,
 	Args: cobra.ExactArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return []string{"yaml", "yml", "json"}, cobra.ShellCompDirectiveFilterFileExt
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 		proj, err := project.Load()
 		if err != nil {
