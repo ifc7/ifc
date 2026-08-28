@@ -195,20 +195,12 @@ func (p *Project) Use(ctx context.Context, params UseParams) error {
 type AddParams struct {
 	Name string
 	Path string
-	Ref  string
 }
 
 // Add adds a local interface to the project's "own" list in (ifc.yaml).
 // If the file at Path does not exist, the user is asked to create it
 // (including any missing parent directories).
 func (p *Project) Add(ctx context.Context, params AddParams) error {
-	if params.Ref != "" {
-		resolved, err := p.resolveRef(ctx, params.Ref)
-		if err != nil {
-			return fmt.Errorf("error resolving ref %s: %w", params.Ref, err)
-		}
-		params.Ref = resolved
-	}
 	// Reject name/path conflicts before creating a new file on disk.
 	if params.Name != "" && p.config.nameExists(params.Name) {
 		return ErrNameExists
@@ -219,7 +211,7 @@ func (p *Project) Add(ctx context.Context, params AddParams) error {
 	if err := p.ensureOwnedFile(ctx, params); err != nil {
 		return err
 	}
-	return p.config.addOwnedInterface(params.Name, params.Path, params.Ref)
+	return p.config.addOwnedInterface(params.Name, params.Path, "")
 }
 
 // ensureOwnedFile creates Path (and parent directories) after confirmation
