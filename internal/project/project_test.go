@@ -440,6 +440,7 @@ func TestProject_Fetch(t *testing.T) {
 		expManifest Manifest
 		expErr      error
 		setupMock   func(ctrl *client.MockClientWithResponsesIfc)
+		check       func(t *testing.T, manifest Manifest)
 	}{
 		"baseline": {
 			config: Config{
@@ -453,10 +454,7 @@ func TestProject_Fetch(t *testing.T) {
 			fetchParams: FetchParams{},
 			expManifest: mustParseManifest(t, testManifestBytes),
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
-				mock.EXPECT().
-					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
-					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
-					AnyTimes()
+				expectCanonicalResolve(mock)
 				mock.EXPECT().
 					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
 					Return(&client.GetInterfaceResponse{
@@ -465,43 +463,183 @@ func TestProject_Fetch(t *testing.T) {
 						},
 						JSON200: manifestInterface,
 					}, nil).
-					AnyTimes()
+					Times(1)
+				expectRevisionList(mock)
+				expectRevisionGet(mock, manifestRevisions[1])
+				expectReleaseList(mock)
+			},
+		},
+		"unchanged manifest skips revision downloads": {
+			config: Config{
+				Use: []Used{
+					{Ref: "ifc7.dev/i/interface7/rest-api"},
+				},
+			},
+			manifest:    mustParseManifest(t, testManifestBytes),
+			fetchParams: FetchParams{},
+			expManifest: mustParseManifest(t, testManifestBytes),
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				expectCanonicalResolve(mock)
+				mock.EXPECT().
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{
+							StatusCode: http.StatusOK,
+						},
+						JSON200: manifestInterface,
+					}, nil).
+					Times(1)
+				expectReleaseList(mock)
+			},
+		},
+		"interface id skips resolve get": {
+			config: Config{
+				Use: []Used{
+					{Ref: "interface_01kn3ma93qe59r0p8kw6821y2n"},
+				},
+			},
+			manifest:    Manifest{},
+			fetchParams: FetchParams{},
+			expManifest: mustParseManifest(t, testManifestBytes),
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				mock.EXPECT().
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{
+							StatusCode: http.StatusOK,
+						},
+						JSON200: manifestInterface,
+					}, nil).
+					Times(1)
+				expectRevisionList(mock)
+				expectRevisionGet(mock, manifestRevisions[1])
+				expectReleaseList(mock)
+			},
+		},
+		"duplicate ref is fetched once": {
+			config: Config{
+				Use: []Used{
+					{Ref: "ifc7.dev/i/interface7/rest-api"},
+				},
+				Own: []Owned{
+					{Ref: "ifc7.dev/i/interface7/rest-api"},
+				},
+			},
+			manifest:    Manifest{},
+			fetchParams: FetchParams{},
+			expManifest: mustParseManifest(t, testManifestBytes),
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				expectCanonicalResolve(mock)
+				mock.EXPECT().
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{
+							StatusCode: http.StatusOK,
+						},
+						JSON200: manifestInterface,
+					}, nil).
+					Times(1)
+				expectRevisionList(mock)
+				expectRevisionGet(mock, manifestRevisions[1])
+				expectReleaseList(mock)
+			},
+		},
+		"new revision is downloaded": {
+			config: Config{
+				Use: []Used{
+					{Ref: "ifc7.dev/i/interface7/rest-api"},
+				},
+			},
+			manifest:    mustParseManifest(t, testManifestBytes),
+			fetchParams: FetchParams{},
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				remote := *manifestInterface
+				sparse := newTestRevision
+				sparse.Specification = ""
+				remote.LatestRevision = &sparse
+				descriptors := append([]client.InterfaceRevisionDescriptor{}, (*manifestRevisionDescriptors)...)
+				descriptors = append(descriptors, client.InterfaceRevisionDescriptor{
+					Id:        newTestRevision.Id,
+					Checksum:  newTestRevision.Checksum,
+					CreatedAt: newTestRevision.CreatedAt,
+					CreatedBy: newTestRevision.CreatedBy,
+					Notes:     newTestRevision.Notes,
+				})
+				expectCanonicalResolve(mock)
+				mock.EXPECT().
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200:      &remote,
+					}, nil).
+					Times(1)
 				mock.EXPECT().
 					ListInterfaceRevisionsWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
 					Return(&client.ListInterfaceRevisionsResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestRevisionDescriptors,
-					}, nil).
-					AnyTimes()
-				mock.EXPECT().
-					GetInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n"), gomock.Eq(client.InterfaceRevisionId("revision_01kn3r6n8zf3aa3rrnzmakqncn"))).
-					Return(&client.GetInterfaceRevisionResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: &manifestRevisions[0],
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200:      &descriptors,
 					}, nil).
 					Times(1)
+				expectRevisionGet(mock, newTestRevision)
+				expectReleaseList(mock)
+			},
+			check: func(t *testing.T, manifest Manifest) {
+				_, ifc, ok := manifest.findInterface("interface_01kn3ma93qe59r0p8kw6821y2n")
+				if !ok {
+					t.Fatal("interface missing from manifest")
+				}
+				rev, ok := ifc.Revisions[newTestRevision.Id]
+				if !ok {
+					t.Fatal("new revision was not stored")
+				}
+				if rev.Specification != newTestRevision.Specification {
+					t.Fatalf("new revision specification = %q", rev.Specification)
+				}
+				for _, id := range []client.InterfaceRevisionId{manifestRevisions[0].Id, manifestRevisions[1].Id} {
+					if _, ok := ifc.Revisions[id]; !ok {
+						t.Fatalf("existing revision %s missing", id)
+					}
+				}
+			},
+		},
+		"checksum placeholder is rekeyed without download": {
+			config: Config{
+				Use: []Used{
+					{Ref: "ifc7.dev/i/interface7/rest-api"},
+				},
+			},
+			manifest:    checksumPlaceholderManifest(),
+			fetchParams: FetchParams{},
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				expectCanonicalResolve(mock)
 				mock.EXPECT().
-					GetInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n"), gomock.Eq(client.InterfaceRevisionId("revision_01kn3ma93qe5a8d6mvh4xa2kx7"))).
-					Return(&client.GetInterfaceRevisionResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: &manifestRevisions[1],
+					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+					Return(&client.GetInterfaceResponse{
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200:      manifestInterface,
 					}, nil).
 					Times(1)
-				mock.EXPECT().
-					ListInterfaceReleasesWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
-					Return(&client.ListInterfaceReleasesResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestReleases,
-					}, nil).
-					AnyTimes()
+				expectRevisionList(mock)
+				expectReleaseList(mock)
+			},
+			check: func(t *testing.T, manifest Manifest) {
+				_, ifc, ok := manifest.findInterface("interface_01kn3ma93qe59r0p8kw6821y2n")
+				if !ok {
+					t.Fatal("interface missing from manifest")
+				}
+				if _, ok := ifc.Revisions[manifestRevisions[1].Checksum]; ok {
+					t.Fatal("checksum placeholder key remains")
+				}
+				older, ok := ifc.Revisions[manifestRevisions[1].Id]
+				if !ok {
+					t.Fatal("placeholder was not rekeyed to the server revision id")
+				}
+				if older.Specification != manifestRevisions[1].Specification {
+					t.Fatal("rekeyed revision lost its specification")
+				}
+				if _, ok := ifc.Revisions[manifestRevisions[0].Id]; !ok {
+					t.Fatal("latest revision was not stored from the interface payload")
+				}
 			},
 		},
 	} {
@@ -512,6 +650,10 @@ func TestProject_Fetch(t *testing.T) {
 			}
 			err = proj.Fetch(t.Context(), tc.fetchParams)
 			if endTest := testutils.CheckErr(t, err, tc.expErr); endTest == true {
+				return
+			}
+			if tc.check != nil {
+				tc.check(t, proj.manifest)
 				return
 			}
 			if !reflect.DeepEqual(proj.manifest, tc.expManifest) {
@@ -718,6 +860,71 @@ func TestProject_Push(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+var newTestRevision = client.InterfaceRevision{
+	Id:            "revision_01kn3new0000000000000001",
+	Checksum:      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	Specification: "bmV3",
+	CreatedAt:     time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+	CreatedBy:     testUserID,
+	Notes:         testutils.Ptr("New revision"),
+}
+
+func expectCanonicalResolve(mock *client.MockClientWithResponsesIfc) {
+	mock.EXPECT().
+		GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
+		Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
+		Times(1)
+}
+
+func expectRevisionList(mock *client.MockClientWithResponsesIfc) {
+	mock.EXPECT().
+		ListInterfaceRevisionsWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+		Return(&client.ListInterfaceRevisionsResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      manifestRevisionDescriptors,
+		}, nil).
+		Times(1)
+}
+
+func expectRevisionGet(mock *client.MockClientWithResponsesIfc, rev client.InterfaceRevision) {
+	revCopy := rev
+	mock.EXPECT().
+		GetInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n"), gomock.Eq(rev.Id)).
+		Return(&client.GetInterfaceRevisionResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      &revCopy,
+		}, nil).
+		Times(1)
+}
+
+func expectReleaseList(mock *client.MockClientWithResponsesIfc) {
+	mock.EXPECT().
+		ListInterfaceReleasesWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
+		Return(&client.ListInterfaceReleasesResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      manifestReleases,
+		}, nil).
+		Times(1)
+}
+
+func checksumPlaceholderManifest() Manifest {
+	placeholder := manifestRevisions[1]
+	placeholder.Id = placeholder.Checksum
+	ifc := *manifestInterface
+	ifc.LatestRevision = &placeholder
+	return Manifest{
+		Interfaces: map[string]*ManifestInterface{
+			ifc.Id: {
+				Interface: ifc,
+				Revisions: map[string]*client.InterfaceRevision{
+					placeholder.Checksum: &placeholder,
+				},
+				Releases: map[string]*client.InterfaceRelease{},
+			},
+		},
 	}
 }
 
