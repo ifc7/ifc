@@ -323,26 +323,51 @@ type PushParams struct {
 
 // Push pushes local changes to the remote server. It returns user-facing status messages.
 func (p *Project) Push(ctx context.Context, params PushParams) ([]string, error) {
-	if params.Name != "" {
-		for _, o := range p.config.Own {
-			if o.Ref == params.Name {
-				return p.push(ctx, o)
-			}
-		}
-		return nil, ErrInvalidRef
+	targets, err := p.ownedToPush(params)
+	if err != nil {
+		return nil, err
 	}
-	if len(p.config.Own) == 0 {
+	if targets == nil {
 		return []string{"No owned interfaces to push."}, nil
 	}
+	session := &pushSession{}
+	for _, o := range targets {
+		if o.Ref == "" {
+			if err := session.loadOwnerChoices(ctx, p); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
 	var messages []string
-	for _, o := range p.config.Own {
-		msgs, err := p.push(ctx, o)
+	for _, o := range targets {
+		msgs, err := p.push(ctx, o, session)
 		if err != nil {
+			if params.Name != "" {
+				return messages, err
+			}
 			return messages, fmt.Errorf("error pushing interface %q: %w", o.Name, err)
 		}
 		messages = append(messages, msgs...)
 	}
 	return messages, nil
+}
+
+// ownedToPush returns the owned interfaces selected by params.
+// A nil slice means the project has nothing to push.
+func (p *Project) ownedToPush(params PushParams) ([]Owned, error) {
+	if params.Name != "" {
+		for _, o := range p.config.Own {
+			if o.Ref == params.Name {
+				return []Owned{o}, nil
+			}
+		}
+		return nil, ErrInvalidRef
+	}
+	if len(p.config.Own) == 0 {
+		return nil, nil
+	}
+	return p.config.Own, nil
 }
 
 // -----
@@ -762,8 +787,101 @@ func (p *Project) manifestKeyForOwned(ctx context.Context, own Owned) (string, e
 	return string(id), nil
 }
 
+// pushSession caches the current user and organization list for one Push.
+// Owner choices load once when any targeted interface has no ref. The user
+// loads once, and only when a revision is created, unless choices were already loaded.
+type pushSession struct {
+	user          *client.User
+	orgs          []client.Organization
+	choicesLoaded bool
+}
+
+func (s *pushSession) ensureUser(ctx context.Context, p *Project) error {
+	if s.user != nil {
+		return nil
+	}
+	userResp, err := p.client.GetCurrentUserWithResponse(ctx)
+	if err != nil {
+		return fmt.Errorf("error fetching current user: %w", err)
+	}
+	if userResp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("error fetching current user: HTTP %d", userResp.StatusCode())
+	}
+	if userResp.JSON200 == nil {
+		return fmt.Errorf("error fetching current user: unexpected response body")
+	}
+	s.user = userResp.JSON200
+	return nil
+}
+
+func (s *pushSession) loadOwnerChoices(ctx context.Context, p *Project) error {
+	if err := s.ensureUser(ctx, p); err != nil {
+		return err
+	}
+	if s.choicesLoaded {
+		return nil
+	}
+	orgsResp, err := p.client.ListOrganizationsWithResponse(ctx)
+	if err != nil {
+		return fmt.Errorf("error listing organizations: %w", err)
+	}
+	if orgsResp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("error listing organizations: HTTP %d", orgsResp.StatusCode())
+	}
+	if orgsResp.JSON200 == nil {
+		return fmt.Errorf("error listing organizations: unexpected response body")
+	}
+	s.orgs = *orgsResp.JSON200
+	s.choicesLoaded = true
+	return nil
+}
+
+func (s *pushSession) userID(ctx context.Context, p *Project) (client.UserId, error) {
+	if err := s.ensureUser(ctx, p); err != nil {
+		return "", err
+	}
+	return s.user.Id, nil
+}
+
+func (s *pushSession) ownerOptions() []tui.InterfaceOwnerOption {
+	user := s.user
+	userLabel := user.Name
+	if userLabel == "" {
+		userLabel = user.Slug
+	}
+	if userLabel == "" {
+		userLabel = "You (current user)"
+	} else {
+		userLabel = fmt.Sprintf("You (%s)", userLabel)
+	}
+	options := []tui.InterfaceOwnerOption{{
+		ID:    string(user.Id),
+		Label: userLabel,
+		Kind:  "user",
+	}}
+	for _, org := range s.orgs {
+		label := org.Name
+		if label == "" {
+			label = org.Slug
+		}
+		if label == "" {
+			label = string(org.Id)
+		}
+		options = append(options, tui.InterfaceOwnerOption{
+			ID:    string(org.Id),
+			Label: label,
+			Kind:  "org",
+		})
+	}
+	return options
+}
+
+func interfaceIdentityComplete(ifc client.Interface) bool {
+	return ifc.Owner != "" && ifc.Slug != "" && ifc.CanonicalUrl != ""
+}
+
 // push saves an interface revision or creates a new interface on the server.
-func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
+func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]string, error) {
 	// for each owned interface
 	// 1. check if there is an entry checked into the manifest
 	// 2. if so, is there a ref in the owned entry?
@@ -782,60 +900,11 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	var messages []string
 	if own.Ref == "" {
 		// handle interfaces not yet saved on the server
-		userResp, err := p.client.GetCurrentUserWithResponse(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error fetching current user: %w", err)
+		if err := session.loadOwnerChoices(ctx, p); err != nil {
+			return nil, err
 		}
-		if userResp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("error fetching current user: HTTP %d", userResp.StatusCode())
-		}
-		if userResp.JSON200 == nil {
-			return nil, fmt.Errorf("error fetching current user: unexpected response body")
-		}
-		user := userResp.JSON200
-		userID := user.Id
-
-		orgsResp, err := p.client.ListOrganizationsWithResponse(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error listing organizations: %w", err)
-		}
-		if orgsResp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("error listing organizations: HTTP %d", orgsResp.StatusCode())
-		}
-		if orgsResp.JSON200 == nil {
-			return nil, fmt.Errorf("error listing organizations: unexpected response body")
-		}
-
-		userLabel := user.Name
-		if userLabel == "" {
-			userLabel = user.Slug
-		}
-		if userLabel == "" {
-			userLabel = "You (current user)"
-		} else {
-			userLabel = fmt.Sprintf("You (%s)", userLabel)
-		}
-		options := []tui.InterfaceOwnerOption{{
-			ID:    string(userID),
-			Label: userLabel,
-			Kind:  "user",
-		}}
-		for _, org := range *orgsResp.JSON200 {
-			label := org.Name
-			if label == "" {
-				label = org.Slug
-			}
-			if label == "" {
-				label = string(org.Id)
-			}
-			options = append(options, tui.InterfaceOwnerOption{
-				ID:    string(org.Id),
-				Label: label,
-				Kind:  "org",
-			})
-		}
-
-		selectedOwner, err := promptInterfaceOwner(ctx, own.Name, options)
+		userID := session.user.Id
+		selectedOwner, err := promptInterfaceOwner(ctx, own.Name, session.ownerOptions())
 		if err != nil {
 			return nil, fmt.Errorf("error prompting for interface owner: %w", err)
 		}
@@ -926,23 +995,25 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 			return nil, err
 		}
 	}
-	userID, err := p.client.CurrentUserID(ctx)
-	if err != nil {
-		return nil, err
+	if !interfaceIdentityComplete(manifestEntry.Interface) {
+		serverIfcResp, err := p.client.GetInterfaceWithResponse(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching interface %s: %w", id, err)
+		}
+		if serverIfcResp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("error fetching interface %s: HTTP %d", id, serverIfcResp.StatusCode())
+		}
+		if serverIfcResp.JSON200 == nil {
+			return nil, fmt.Errorf("error fetching interface %s: unexpected response body", id)
+		}
+		serverIfc := *serverIfcResp.JSON200
+		manifestEntry.applyServerIdentity(serverIfc.Owner, serverIfc.Slug, serverIfc.CanonicalUrl)
+		p.manifest.ensureInterfaceKey(manifestEntry)
+		// compare manifest interface to server & update if necessary
+		if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
+			// TODO: add API endpoint for updating an interface
+		}
 	}
-	serverIfcResp, err := p.client.GetInterfaceWithResponse(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching interface %s: %w", id, err)
-	}
-	if serverIfcResp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("error fetching interface %s: HTTP %d", id, serverIfcResp.StatusCode())
-	}
-	if serverIfcResp.JSON200 == nil {
-		return nil, fmt.Errorf("error fetching interface %s: unexpected response body", id)
-	}
-	serverIfc := *serverIfcResp.JSON200
-	manifestEntry.applyServerIdentity(serverIfc.Owner, serverIfc.Slug, serverIfc.CanonicalUrl)
-	p.manifest.ensureInterfaceKey(manifestEntry)
 	serverRevisionsResp, err := p.client.ListInterfaceRevisionsWithResponse(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching revisions: %w", err)
@@ -953,46 +1024,12 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	if serverRevisionsResp.JSON200 == nil {
 		return nil, fmt.Errorf("error fetching revisions: unexpected response body")
 	}
-	serverRevisions := *serverRevisionsResp.JSON200
-	serverRevisionsMap := make(map[string]*client.InterfaceRevision)
-	for _, revDescriptor := range serverRevisions {
-		getResp, err := p.client.GetInterfaceRevisionWithResponse(ctx, id, revDescriptor.Id)
-		if err != nil {
-			return nil, fmt.Errorf("error fetching revision: %w", err)
-		}
-		if getResp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("error fetching revision: HTTP %d", getResp.StatusCode())
-		}
-		if getResp.JSON200 == nil {
-			return nil, fmt.Errorf("error fetching revisions: unexpected response body")
-		}
-		rev := *getResp.JSON200
-		serverRevisionsMap[rev.Id] = &rev
-	}
-	serverReleasesResp, err := p.client.ListInterfaceReleasesWithResponse(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching releases: %w", err)
-	}
-	if serverReleasesResp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("error fetching releases: HTTP %d", serverReleasesResp.StatusCode())
-	}
-	if serverReleasesResp.JSON200 == nil {
-		return nil, fmt.Errorf("error fetching releases: unexpected response body")
-	}
-	serverReleases := *serverReleasesResp.JSON200
-	serverReleasesMap := make(map[string]*client.InterfaceRelease)
-	for _, rel := range serverReleases {
-		serverReleasesMap[rel.SemanticVersion] = &rel
-	}
-	_ = serverReleasesMap
-	// compare manifest interface to server & update if necessary
-	if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
-		// TODO: add API endpoint for updating an interface
-	}
-	var manifestMissingRevs []*client.InterfaceRevision
-	for _, rev := range serverRevisionsMap {
-		if _, ok := manifestEntry.Revisions[rev.Id]; !ok {
-			manifestMissingRevs = append(manifestMissingRevs, rev)
+	serverIDs := make(map[string]struct{}, len(*serverRevisionsResp.JSON200))
+	var manifestMissingRevs []client.InterfaceRevisionId
+	for _, desc := range *serverRevisionsResp.JSON200 {
+		serverIDs[desc.Id] = struct{}{}
+		if _, ok := manifestEntry.Revisions[desc.Id]; !ok {
+			manifestMissingRevs = append(manifestMissingRevs, desc.Id)
 		}
 	}
 	if len(manifestMissingRevs) > 0 {
@@ -1000,32 +1037,44 @@ func (p *Project) push(ctx context.Context, own Owned) ([]string, error) {
 	}
 	var serverMissingRevKeys []string
 	for key, rev := range manifestEntry.Revisions {
-		if _, ok := serverRevisionsMap[rev.Id]; !ok {
+		if rev == nil {
+			continue
+		}
+		if _, ok := serverIDs[rev.Id]; !ok {
 			serverMissingRevKeys = append(serverMissingRevKeys, key)
 		}
 	}
-	for _, revKey := range serverMissingRevKeys {
-		rev := manifestEntry.Revisions[revKey]
-		// TODO: check if revisions existing in server need updating
-		// TODO: add API endpoint for updating revisions
-		result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
-			CreatedBy:     userID,
-			Specification: rev.Specification,
-			Notes:         rev.Notes,
-		})
+	slices.SortStableFunc(serverMissingRevKeys, func(a, b string) int {
+		return manifestEntry.Revisions[a].CreatedAt.Compare(manifestEntry.Revisions[b].CreatedAt)
+	})
+	if len(serverMissingRevKeys) > 0 {
+		userID, err := session.userID(ctx, p)
 		if err != nil {
-			return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
+			return nil, err
 		}
-		if result.StatusCode() != http.StatusCreated {
-			return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+		for _, revKey := range serverMissingRevKeys {
+			rev := manifestEntry.Revisions[revKey]
+			// TODO: check if revisions existing in server need updating
+			// TODO: add API endpoint for updating revisions
+			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
+				CreatedBy:     userID,
+				Specification: rev.Specification,
+				Notes:         rev.Notes,
+			})
+			if err != nil {
+				return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
+			}
+			if result.StatusCode() != http.StatusCreated {
+				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+			}
+			if result.JSON201 == nil {
+				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
+			}
+			if err := p.recordPushedRevision(manifestInterfaceKey(manifestEntry.Interface), revKey, result.JSON201); err != nil {
+				return messages, err
+			}
+			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
-		if result.JSON201 == nil {
-			return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
-		}
-		if err := p.recordPushedRevision(manifestInterfaceKey(manifestEntry.Interface), revKey, result.JSON201); err != nil {
-			return messages, err
-		}
-		messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 	}
 	// TODO: handle releases
 	if len(messages) == 0 {

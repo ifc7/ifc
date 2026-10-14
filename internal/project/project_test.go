@@ -759,76 +759,84 @@ func TestProject_Commit(t *testing.T) {
 }
 
 func TestProject_Push(t *testing.T) {
+	owned := Config{
+		Own: []Owned{
+			{
+				Name: "ifc7-rest",
+				Ref:  "ifc7.dev/i/interface7/rest-api",
+				Path: testApiPath,
+			},
+		},
+	}
 	for name, tc := range map[string]struct {
 		config     Config
 		manifest   Manifest
 		pushParams PushParams
 		expErr     error
 		setupMock  func(ctrl *client.MockClientWithResponsesIfc)
+		check      func(t *testing.T, proj *Project)
 	}{
 		"baseline": {
-			config: Config{
-				Own: []Owned{
-					{
-						Name: "ifc7-rest",
-						Ref:  "ifc7.dev/i/interface7/rest-api",
-						Path: testApiPath,
-					},
-				},
-			},
+			config:     owned,
 			manifest:   mustParseManifest(t, testManifestBytes),
 			pushParams: PushParams{},
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
-				expectCurrentUserID(mock)
-				mock.EXPECT().
-					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
-					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
-					AnyTimes()
 				mock.EXPECT().
 					GetInterfaceWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
 					Return(&client.GetInterfaceResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestInterface,
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200:      manifestInterface,
 					}, nil).
-					AnyTimes()
+					Times(1)
+				expectRevisionList(mock)
+			},
+		},
+		"identity complete": {
+			config:   owned,
+			manifest: manifestWithIdentity(t),
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				expectRevisionList(mock)
+			},
+		},
+		"local revision": {
+			config:   owned,
+			manifest: manifestWithLocalRevision(t),
+			setupMock: func(mock *client.MockClientWithResponsesIfc) {
+				expectRevisionList(mock)
 				mock.EXPECT().
-					ListInterfaceRevisionsWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
-					Return(&client.ListInterfaceRevisionsResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
+					GetCurrentUserWithResponse(gomock.Any()).
+					Return(&client.GetCurrentUserResponse{
+						HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+						JSON200: &client.User{
+							Id:   testUserID,
+							Name: "test-user",
+							Slug: "test-user",
 						},
-						JSON200: manifestRevisionDescriptors,
 					}, nil).
-					AnyTimes()
+					Times(1)
 				mock.EXPECT().
-					GetInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n"), gomock.Eq(client.InterfaceRevisionId("revision_01kn3r6n8zf3aa3rrnzmakqncn"))).
-					Return(&client.GetInterfaceRevisionResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
+					CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId("interface_01kn3ma93qe59r0p8kw6821y2n")), gomock.Any()).
+					Return(&client.CreateInterfaceRevisionResponse{
+						HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+						JSON201: &client.InterfaceRevisionDescriptor{
+							Id:        "revision_01kn3localonly0000000001",
+							CreatedAt: time.Date(2026, time.May, 2, 0, 0, 0, 0, time.UTC),
 						},
-						JSON200: &manifestRevisions[0],
 					}, nil).
-					AnyTimes()
-				mock.EXPECT().
-					GetInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n"), gomock.Eq(client.InterfaceRevisionId("revision_01kn3ma93qe5a8d6mvh4xa2kx7"))).
-					Return(&client.GetInterfaceRevisionResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: &manifestRevisions[1],
-					}, nil).
-					AnyTimes()
-				mock.EXPECT().
-					ListInterfaceReleasesWithResponse(gomock.Any(), gomock.Eq("interface_01kn3ma93qe59r0p8kw6821y2n")).
-					Return(&client.ListInterfaceReleasesResponse{
-						HTTPResponse: &http.Response{
-							StatusCode: http.StatusOK,
-						},
-						JSON200: manifestReleases,
-					}, nil).
-					AnyTimes()
+					Times(1)
+			},
+			check: func(t *testing.T, proj *Project) {
+				t.Helper()
+				_, ifc, ok := proj.manifest.findInterface("interface_01kn3ma93qe59r0p8kw6821y2n")
+				if !ok {
+					t.Fatal("interface missing after push")
+				}
+				if _, ok := ifc.Revisions[testChecksum]; ok {
+					t.Fatal("revision still keyed by checksum after push")
+				}
+				if _, ok := ifc.Revisions["revision_01kn3localonly0000000001"]; !ok {
+					t.Fatal("pushed revision was not re-keyed")
+				}
 			},
 		},
 		"no manifest entry": {
@@ -843,10 +851,7 @@ func TestProject_Push(t *testing.T) {
 			},
 			manifest: Manifest{},
 			setupMock: func(mock *client.MockClientWithResponsesIfc) {
-				mock.EXPECT().
-					GetInterfaceByCanonicalPathWithResponse(gomock.Any(), gomock.Eq("ifc7.dev"), gomock.Eq("interface7"), gomock.Eq("rest-api")).
-					Return(&client.CanonicalInterfaceMeta{Id: "interface_01kn3ma93qe59r0p8kw6821y2n"}, http.StatusOK, nil).
-					AnyTimes()
+				expectCanonicalResolve(mock)
 			},
 		},
 	} {
@@ -859,8 +864,38 @@ func TestProject_Push(t *testing.T) {
 			if endTest := testutils.CheckErr(t, err, tc.expErr); endTest == true {
 				return
 			}
+			if tc.check != nil {
+				tc.check(t, proj)
+			}
 		})
 	}
+}
+
+func manifestWithIdentity(t *testing.T) Manifest {
+	t.Helper()
+	m := mustParseManifest(t, testManifestBytes)
+	for _, ifc := range m.Interfaces {
+		ifc.Owner = "org_01kn3test000000000000000000"
+		ifc.Slug = "rest-api"
+		ifc.CanonicalUrl = "/i/interface7/rest-api"
+	}
+	return m
+}
+
+func manifestWithLocalRevision(t *testing.T) Manifest {
+	t.Helper()
+	m := manifestWithIdentity(t)
+	for _, ifc := range m.Interfaces {
+		ifc.Revisions[testChecksum] = &client.InterfaceRevision{
+			Id:            testChecksum,
+			Checksum:      testChecksum,
+			Specification: "bmV3",
+			CreatedAt:     time.Date(2026, time.May, 2, 0, 0, 0, 0, time.UTC),
+			CreatedBy:     testUserID,
+			Notes:         testutils.Ptr("local only"),
+		}
+	}
+	return m
 }
 
 var newTestRevision = client.InterfaceRevision{
