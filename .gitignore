@@ -38,6 +38,3 @@ bin/
 # ifc7
 .ifc/
 
-# test sandbox
-test/sandbox/
-

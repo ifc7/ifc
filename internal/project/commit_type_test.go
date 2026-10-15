@@ -3,15 +3,15 @@ package project
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 	"github.com/ifc7/ifc/internal/tui"
 )
 
 func TestProject_Commit_detectsInterfaceType(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 
 	orig := promptNewInterfaceCommit
 	promptNewInterfaceCommit = func(ctx context.Context, name string, ifaceType client.InterfaceType) (tui.NewInterface, error) {
@@ -44,11 +44,12 @@ func TestProject_Commit_detectsInterfaceType(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := os.WriteFile(tc.filename, tc.content, 0o644); err != nil {
+			filename := filepath.Join(dir, tc.filename)
+			if err := os.WriteFile(filename, tc.content, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			proj, err := projectWithMockClient(t, Config{
-				Own: []Owned{{Name: "iface", Path: tc.filename}},
+				Own: []Owned{{Name: "iface", Path: filename}},
 			}, Manifest{Interfaces: map[string]*ManifestInterface{}}, func(mock *client.MockClientWithResponsesIfc) {
 				expectCurrentUserID(mock)
 			})

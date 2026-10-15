@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/ifc7/ifc/internal/pkg/fileio"
@@ -15,7 +16,7 @@ func TestStrPtr(t *testing.T) {
 }
 
 func TestMustReadFile(t *testing.T) {
-	UseSandbox(t)
+	dir := t.TempDir()
 	for _, c := range []struct {
 		name         string
 		filePath     string
@@ -25,9 +26,9 @@ func TestMustReadFile(t *testing.T) {
 	}{
 		{
 			name:     "it can read an existing file",
-			filePath: "TestReadFile-1.txt",
+			filePath: filepath.Join(dir, "TestReadFile-1.txt"),
 			setup: func() {
-				err := fileio.WriteFile([]byte("TestReadFile-1"), "TestReadFile-1.txt")
+				err := fileio.WriteFile([]byte("TestReadFile-1"), filepath.Join(dir, "TestReadFile-1.txt"))
 				if err != nil {
 					t.Fatalf("unexpected error writing file: %v", err)
 				}

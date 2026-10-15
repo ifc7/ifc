@@ -110,7 +110,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestProject_Initialize(t *testing.T) {
-	testutils.UseSandbox(t)
+	t.Chdir(t.TempDir())
 	for name, _ := range map[string]struct {
 		expErr error
 	}{
@@ -251,8 +251,6 @@ func stubCreateMissingFilePrompt(t *testing.T, err error) {
 }
 
 func TestProject_Add(t *testing.T) {
-	testutils.UseSandbox(t)
-
 	for name, tc := range map[string]struct {
 		config    Config
 		manifest  Manifest
@@ -311,22 +309,34 @@ func TestProject_Add(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			testutils.UseSandbox(t)
+			dir := t.TempDir()
+			addParams := tc.addParams
+			addParams.Path = filepath.Join(dir, addParams.Path)
+			config := tc.config
+			config.Own = append([]Owned(nil), tc.config.Own...)
+			for i := range config.Own {
+				config.Own[i].Path = filepath.Join(dir, config.Own[i].Path)
+			}
+			expConfig := tc.expConfig
+			expConfig.Own = append([]Owned(nil), tc.expConfig.Own...)
+			for i := range expConfig.Own {
+				expConfig.Own[i].Path = filepath.Join(dir, expConfig.Own[i].Path)
+			}
 			if tc.expErr == nil {
-				if err := os.WriteFile(tc.addParams.Path, []byte("{}"), 0o644); err != nil {
+				if err := os.WriteFile(addParams.Path, []byte("{}"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
-			proj, err := projectWithMockClient(t, tc.config, tc.manifest, tc.setupMock)
+			proj, err := projectWithMockClient(t, config, tc.manifest, tc.setupMock)
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = proj.Add(t.Context(), tc.addParams)
+			err = proj.Add(t.Context(), addParams)
 			if endTest := testutils.CheckErr(t, err, tc.expErr); endTest == true {
 				return
 			}
-			if !reflect.DeepEqual(proj.config, tc.expConfig) {
-				t.Fatalf("expected config to be %v, got %v", tc.expConfig, proj.config)
+			if !reflect.DeepEqual(proj.config, expConfig) {
+				t.Fatalf("expected config to be %v, got %v", expConfig, proj.config)
 			}
 		})
 	}
@@ -338,7 +348,7 @@ func TestProject_Add(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		path := filepath.Join("nested", "dir", "new-api.yaml")
+		path := filepath.Join(t.TempDir(), "nested", "dir", "new-api.yaml")
 		err = proj.Add(t.Context(), AddParams{
 			Name: "new-api",
 			Path: path,
@@ -364,7 +374,7 @@ func TestProject_Add(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		path := "missing.yaml"
+		path := filepath.Join(t.TempDir(), "missing.yaml")
 		err = proj.Add(t.Context(), AddParams{
 			Name: "missing",
 			Path: path,
@@ -381,7 +391,8 @@ func TestProject_Add(t *testing.T) {
 	})
 
 	t.Run("fails on existing directory", func(t *testing.T) {
-		if err := os.Mkdir("already-a-dir", 0o755); err != nil {
+		dir := filepath.Join(t.TempDir(), "already-a-dir")
+		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 
@@ -391,7 +402,7 @@ func TestProject_Add(t *testing.T) {
 		}
 		err = proj.Add(t.Context(), AddParams{
 			Name: "dir",
-			Path: "already-a-dir",
+			Path: dir,
 		})
 		if err == nil || !strings.Contains(err.Error(), "is a directory") {
 			t.Fatalf("expected directory error, got %v", err)
@@ -410,15 +421,17 @@ func TestProject_Add(t *testing.T) {
 		}
 		t.Cleanup(func() { promptCreateMissingFile = orig })
 
+		dir := t.TempDir()
+		newPath := filepath.Join(dir, "new.yaml")
 		proj, err := projectWithMockClient(t, Config{
-			Own: []Owned{{Name: "taken", Path: "existing.yaml"}},
+			Own: []Owned{{Name: "taken", Path: filepath.Join(dir, "existing.yaml")}},
 		}, Manifest{}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		err = proj.Add(t.Context(), AddParams{
 			Name: "taken",
-			Path: "new.yaml",
+			Path: newPath,
 		})
 		if err != ErrNameExists {
 			t.Fatalf("expected ErrNameExists, got %v", err)
@@ -426,7 +439,7 @@ func TestProject_Add(t *testing.T) {
 		if promptCalled {
 			t.Fatal("should not prompt to create a file when the name already exists")
 		}
-		if fileio.FileExists("new.yaml") {
+		if fileio.FileExists(newPath) {
 			t.Fatal("should not create a file when add is rejected")
 		}
 	})
