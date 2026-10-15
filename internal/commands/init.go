@@ -40,8 +40,5 @@ func init() {
 }
 
 func projectIsInitialized() bool {
-	if !fileio.FileExists(internal.IfcConfigFile) {
-		return false
-	}
-	return true
+	return fileio.FileExists(internal.IfcConfigFile)
 }

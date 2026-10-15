@@ -56,7 +56,7 @@ var (
 )
 
 func TestNewManifest(t *testing.T) {
-	for name, _ := range map[string]struct {
+	for name := range map[string]struct {
 	}{
 		"baseline": {},
 	} {

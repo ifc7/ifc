@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
-	"gopkg.in/yaml.v3"
 
 	"github.com/ifc7/ifc/internal"
 	"github.com/ifc7/ifc/internal/client"
@@ -1010,9 +1008,9 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 		manifestEntry.applyServerIdentity(serverIfc.Owner, serverIfc.Slug, serverIfc.CanonicalUrl)
 		p.manifest.ensureInterfaceKey(manifestEntry)
 		// compare manifest interface to server & update if necessary
-		if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
-			// TODO: add API endpoint for updating an interface
-		}
+		//if manifestEntry.Interface.Name != serverIfc.Name || *manifestEntry.Interface.Description != *serverIfc.Description {
+		//	// TODO: add API endpoint for updating an interface
+		//}
 	}
 	serverRevisionsResp, err := p.client.ListInterfaceRevisionsWithResponse(ctx, id)
 	if err != nil {
@@ -1180,16 +1178,4 @@ func base64Encode(data []byte) string {
 // base64Decode decodes a base64-encoded string into a byte slice
 func base64Decode(data string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(data)
-}
-
-// getExt will try to determine the file extension of the file contents
-func getExt(b []byte) (string, error) {
-	if json.Valid(b) {
-		return ".json", nil
-	}
-	var i any
-	if yaml.Unmarshal(b, &i) == nil {
-		return ".yaml", nil
-	}
-	return "", ErrInvalidSpecification
 }

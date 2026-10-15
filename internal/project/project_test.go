@@ -111,7 +111,7 @@ func TestLoad(t *testing.T) {
 
 func TestProject_Initialize(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for name, _ := range map[string]struct {
+	for name := range map[string]struct {
 		expErr error
 	}{
 		"baseline": {
