@@ -2,24 +2,24 @@ package project
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 )
 
 func TestProject_Status(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 
 	content := []byte("openapi: 3.0.0\ninfo:\n  title: t\n  version: 0.1.0\npaths: {}\n")
 	checksum := sha256Checksum(content)
-	path := "api.yaml"
+	path := filepath.Join(dir, "api.yaml")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	modifiedPath := "modified.yaml"
+	modifiedPath := filepath.Join(dir, "modified.yaml")
 	if err := os.WriteFile(modifiedPath, append(content, []byte("# changed\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestProject_Status(t *testing.T) {
 		},
 		"missing": {
 			config: Config{
-				Own: []Owned{{Name: "api", Path: "does-not-exist.yaml"}},
+				Own: []Owned{{Name: "api", Path: filepath.Join(dir, "does-not-exist.yaml")}},
 			},
 			manifest: Manifest{Interfaces: map[string]*ManifestInterface{}},
 			wantKind: StatusMissing,

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
+	"slices"
 
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 
 	"github.com/ifc7/ifc/internal/pkg/fileio"

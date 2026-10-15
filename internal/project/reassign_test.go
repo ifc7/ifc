@@ -402,3 +402,125 @@ func TestProject_Push_NewInterfaceOrgOwner(t *testing.T) {
 		t.Fatalf("owned interface ref not updated to %q: %+v", wantRef, proj.config.Own)
 	}
 }
+
+func TestProject_Push_TwoNewInterfacesShareOwnerLookup(t *testing.T) {
+	const (
+		firstID   = "interface_01kn3first00000000000000"
+		secondID  = "interface_01kn3second0000000000000"
+		firstRev  = "revision_01kn3first000000000000000"
+		secondRev = "revision_01kn3second00000000000000"
+	)
+	serverCreatedAt := time.Date(2026, time.June, 12, 14, 54, 56, 58598000, time.UTC)
+	cfg := Config{
+		Own: []Owned{
+			{Name: "ifc7-rest", Ref: "", Path: testApiPath},
+			{Name: "other-api", Ref: "", Path: "other.yaml"},
+		},
+	}
+	first := committedManifest("ifc7-rest")
+	second := committedManifest("other-api")
+	first.Interfaces["ifc7-rest"].Releases = map[string]*client.InterfaceRelease{}
+	secondIfc := second.Interfaces["other-api"]
+	secondIfc.Name = "other-api"
+	secondIfc.Releases = map[string]*client.InterfaceRelease{}
+	mft := Manifest{Interfaces: map[string]*ManifestInterface{
+		"ifc7-rest": first.Interfaces["ifc7-rest"],
+		"other-api": secondIfc,
+	}}
+
+	stubInterfaceOwnerPrompt(t, tui.InterfaceOwnerOption{
+		ID:    string(testUserID),
+		Label: "You (test-user)",
+		Kind:  "user",
+	})
+
+	proj, err := projectWithMockClient(t, cfg, mft, func(mock *client.MockClientWithResponsesIfc) {
+		mock.EXPECT().
+			GetCurrentUserWithResponse(gomock.Any()).
+			Return(&client.GetCurrentUserResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+				JSON200: &client.User{
+					Id:   testUserID,
+					Name: "test-user",
+					Slug: "test-user",
+				},
+			}, nil).
+			Times(1)
+		mock.EXPECT().
+			ListOrganizationsWithResponse(gomock.Any()).
+			Return(&client.ListOrganizationsResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+				JSON200:      &[]client.Organization{},
+			}, nil).
+			Times(1)
+		mock.EXPECT().
+			CreateInterfaceWithResponse(gomock.Any(), client.CreateInterfaceRequest{
+				Description: testutils.Ptr("a test interface"),
+				Name:        "ifc7-rest",
+				Type:        client.OPENAPI,
+				Owner:       client.InterfaceOwner(testUserID),
+				IsPublic:    true,
+			}).
+			Return(&client.CreateInterfaceResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &client.InterfaceDescriptor{
+					Id:           firstID,
+					Owner:        client.InterfaceOwner(testUserID),
+					Slug:         "ifc7-rest",
+					CanonicalUrl: "/i/@test-user/ifc7-rest",
+				},
+			}, nil).
+			Times(1)
+		mock.EXPECT().
+			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(firstID)), gomock.Any()).
+			Return(&client.CreateInterfaceRevisionResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &client.InterfaceRevisionDescriptor{
+					Id:        firstRev,
+					CreatedAt: serverCreatedAt,
+				},
+			}, nil).
+			Times(1)
+		mock.EXPECT().
+			CreateInterfaceWithResponse(gomock.Any(), client.CreateInterfaceRequest{
+				Description: testutils.Ptr("a test interface"),
+				Name:        "other-api",
+				Type:        client.OPENAPI,
+				Owner:       client.InterfaceOwner(testUserID),
+				IsPublic:    true,
+			}).
+			Return(&client.CreateInterfaceResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &client.InterfaceDescriptor{
+					Id:           secondID,
+					Owner:        client.InterfaceOwner(testUserID),
+					Slug:         "other-api",
+					CanonicalUrl: "/i/@test-user/other-api",
+				},
+			}, nil).
+			Times(1)
+		mock.EXPECT().
+			CreateInterfaceRevisionWithResponse(gomock.Any(), gomock.Eq(client.InterfaceId(secondID)), gomock.Any()).
+			Return(&client.CreateInterfaceRevisionResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &client.InterfaceRevisionDescriptor{
+					Id:        secondRev,
+					CreatedAt: serverCreatedAt,
+				},
+			}, nil).
+			Times(1)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := proj.Push(t.Context(), PushParams{}); err != nil {
+		t.Fatalf("Push returned error: %v", err)
+	}
+	if _, ok := proj.manifest.Interfaces["/i/@test-user/ifc7-rest"]; !ok {
+		t.Fatal("first interface was not created")
+	}
+	if _, ok := proj.manifest.Interfaces["/i/@test-user/other-api"]; !ok {
+		t.Fatal("second interface was not created")
+	}
+}

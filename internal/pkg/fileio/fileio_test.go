@@ -3,13 +3,12 @@ package fileio
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"testing"
-
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 )
 
 func TestWriteFile(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 	for _, c := range []struct {
 		name     string
 		filePath string
@@ -32,11 +31,12 @@ func TestWriteFile(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			err := WriteFile(c.fileData, c.filePath)
+			filePath := filepath.Join(dir, c.filePath)
+			err := WriteFile(c.fileData, filePath)
 			if err != nil {
 				t.Fatalf("unexpected error writing file: %v", err)
 			}
-			data, err := ReadFile(c.filePath)
+			data, err := ReadFile(filePath)
 			if err != nil {
 				t.Fatalf("unexpected error reading file: %v", err)
 			}
@@ -48,7 +48,7 @@ func TestWriteFile(t *testing.T) {
 }
 
 func TestReadFile(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 	for _, c := range []struct {
 		name         string
 		filePath     string
@@ -58,9 +58,9 @@ func TestReadFile(t *testing.T) {
 	}{
 		{
 			name:     "it can read an existing file",
-			filePath: "TestReadFile-1.txt",
+			filePath: filepath.Join(dir, "TestReadFile-1.txt"),
 			setup: func() {
-				err := WriteFile([]byte("TestReadFile-1"), "TestReadFile-1.txt")
+				err := WriteFile([]byte("TestReadFile-1"), filepath.Join(dir, "TestReadFile-1.txt"))
 				if err != nil {
 					t.Fatalf("unexpected error writing file: %v", err)
 				}
@@ -70,7 +70,7 @@ func TestReadFile(t *testing.T) {
 		},
 		{
 			name:         "it will throw an error if the file does not exist",
-			filePath:     "TestReadFile-2.txt",
+			filePath:     filepath.Join(dir, "TestReadFile-2.txt"),
 			setup:        func() {},
 			expectedData: nil,
 			expectedErr:  fs.ErrNotExist,

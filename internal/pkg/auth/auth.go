@@ -25,12 +25,10 @@ type Credentials struct {
 // CredentialsService manages getting and refreshing JWT credentials.
 type CredentialsService struct {
 	*ClientWithResponses
-	Credentials            *Credentials
-	credentialStore        *FileCredentialStore
-	deviceFlowHost         string
-	deviceFlowClientId     string
-	deviceFlowClientSecret string
-	deviceFlowGrantType    string
+	Credentials        *Credentials
+	credentialStore    *FileCredentialStore
+	deviceFlowHost     string
+	deviceFlowClientId string
 }
 
 // CredentialsServiceOptions are functional options that can be used to configure a CredentialsService.

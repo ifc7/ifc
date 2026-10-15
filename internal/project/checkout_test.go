@@ -7,15 +7,14 @@ import (
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 )
 
 func TestProject_Checkout(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 
 	base := []byte("openapi: 3.0.0\ninfo:\n  title: t\n  version: 0.1.0\npaths: {}\n")
 	newer := []byte("openapi: 3.0.0\ninfo:\n  title: newer\n  version: 0.2.0\npaths: {}\n")
-	path := "api.yaml"
+	path := filepath.Join(dir, "api.yaml")
 
 	manifestFor := func(content []byte) Manifest {
 		return Manifest{
@@ -181,9 +180,9 @@ func TestProject_Checkout(t *testing.T) {
 	})
 
 	t.Run("all owned when no targets", func(t *testing.T) {
-		otherPath := filepath.Join("nested", "other.yaml")
+		otherPath := filepath.Join(dir, "nested", "other.yaml")
 		_ = os.Remove(path)
-		_ = os.RemoveAll("nested")
+		_ = os.RemoveAll(filepath.Join(dir, "nested"))
 		proj, err := projectWithMockClient(t, Config{
 			Own: []Owned{
 				{Name: "api", Path: path},

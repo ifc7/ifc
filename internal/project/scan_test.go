@@ -8,12 +8,11 @@ import (
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 	"github.com/ifc7/ifc/internal/tui"
 )
 
 func TestFindUntrackedSpecs(t *testing.T) {
-	testutils.UseSandbox(t)
+	t.Chdir(t.TempDir())
 
 	openapi := []byte("openapi: 3.0.0\ninfo:\n  title: t\n  version: 0.1.0\npaths: {}\n")
 	schema := []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object"}`)
@@ -70,7 +69,7 @@ func TestFindUntrackedSpecs(t *testing.T) {
 }
 
 func TestFindUntrackedSpecs_invalidRoot(t *testing.T) {
-	testutils.UseSandbox(t)
+	t.Chdir(t.TempDir())
 	proj, err := projectWithMockClient(t, Config{}, Manifest{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +86,7 @@ func TestFindUntrackedSpecs_invalidRoot(t *testing.T) {
 }
 
 func TestProject_Scan_addsSelected(t *testing.T) {
-	testutils.UseSandbox(t)
+	t.Chdir(t.TempDir())
 
 	openapi := []byte("openapi: 3.0.0\ninfo:\n  title: t\n  version: 0.1.0\npaths: {}\n")
 	if err := os.WriteFile("petstore.yaml", openapi, 0o644); err != nil {
@@ -128,7 +127,7 @@ func TestProject_Scan_addsSelected(t *testing.T) {
 }
 
 func TestProject_Scan_noneFound(t *testing.T) {
-	testutils.UseSandbox(t)
+	t.Chdir(t.TempDir())
 	proj, err := projectWithMockClient(t, Config{}, Manifest{}, nil)
 	if err != nil {
 		t.Fatal(err)

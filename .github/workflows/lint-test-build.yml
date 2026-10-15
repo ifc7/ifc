@@ -24,10 +24,13 @@ jobs:
       - name: Add Go bin to PATH
         run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
+      - name: Download modules
+        run: go mod download
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6
+          version: v2.14
 
       - name: Run test
         run: make test
