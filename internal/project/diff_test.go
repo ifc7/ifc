@@ -2,18 +2,18 @@ package project
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ifc7/ifc/internal/client"
-	"github.com/ifc7/ifc/internal/pkg/testutils"
 )
 
 func TestProject_DiffOwned(t *testing.T) {
-	testutils.UseSandbox(t)
+	dir := t.TempDir()
 
 	base := []byte("openapi: 3.0.0\ninfo:\n  title: t\n  version: 0.1.0\npaths: {}\n")
-	path := "api.yaml"
+	path := filepath.Join(dir, "api.yaml")
 	if err := os.WriteFile(path, base, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -73,10 +73,10 @@ func TestProject_DiffOwned(t *testing.T) {
 		if diff == "" {
 			t.Fatal("expected non-empty diff")
 		}
-		if !strings.Contains(diff, "--- a/api.yaml (manifest)") {
+		if !strings.Contains(diff, "--- a/"+path+" (manifest)") {
 			t.Fatalf("missing from-file header: %q", diff)
 		}
-		if !strings.Contains(diff, "+++ b/api.yaml") {
+		if !strings.Contains(diff, "+++ b/"+path) {
 			t.Fatalf("missing to-file header: %q", diff)
 		}
 		if !strings.Contains(diff, "+  /pets: {}") {
@@ -128,7 +128,7 @@ func TestProject_DiffOwned(t *testing.T) {
 
 	t.Run("missing file", func(t *testing.T) {
 		proj, err := projectWithMockClient(t, Config{
-			Own: []Owned{{Name: "api", Path: "does-not-exist.yaml"}},
+			Own: []Owned{{Name: "api", Path: filepath.Join(dir, "does-not-exist.yaml")}},
 		}, manifestFor(base), nil)
 		if err != nil {
 			t.Fatal(err)

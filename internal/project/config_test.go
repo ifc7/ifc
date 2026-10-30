@@ -13,7 +13,7 @@ var (
 )
 
 func TestNewConfig(t *testing.T) {
-	for name, _ := range map[string]struct {
+	for name := range map[string]struct {
 	}{
 		"baseline": {},
 	} {
@@ -78,7 +78,7 @@ func TestConfig_Write(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := tc.cfg.Write(path.Join(testutils.SandboxPath, "TestConfig_Write.yaml"))
+			err := tc.cfg.Write(path.Join(t.TempDir(), "TestConfig_Write.yaml"))
 			if endTest := testutils.CheckErr(t, err, tc.expErr); endTest == true {
 				return
 			}

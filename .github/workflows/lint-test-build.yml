@@ -24,10 +24,18 @@ jobs:
       - name: Add Go bin to PATH
         run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
+      - name: Download modules
+        run: go mod download
+
+      - name: Install code generation tools
+        run: |
+          go install go.uber.org/mock/mockgen@v0.6.0
+          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6
+          version: v2.14
 
       - name: Run test
         run: make test

@@ -1,7 +1,8 @@
 version: "2"
 run:
   tests: true
-  timeout: 3m
+  timeout: 5m
+  modules-download-mode: readonly
 linters:
   exclusions:
     generated: lax

@@ -52,7 +52,7 @@ func PrintMessages(messages []string) {
 // When stderr is not a TTY (or NO_COLOR is set), it prints a static message once.
 func StartSpinner(message string) (stop func()) {
 	if os.Getenv("NO_COLOR") != "" ||
-		!(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())) {
+		!isatty.IsTerminal(os.Stderr.Fd()) && !isatty.IsCygwinTerminal(os.Stderr.Fd()) {
 		fmt.Fprintln(os.Stderr, message)
 		return func() {}
 	}
