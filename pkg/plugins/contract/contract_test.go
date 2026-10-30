@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kaptinlin/jsonschema"
@@ -100,17 +101,17 @@ func inlineRefs(node any, defs map[string]any) {
 	switch n := node.(type) {
 	case map[string]any:
 		if ref, ok := n["$ref"].(string); ok {
-			const prefix = "defs.json#/$defs/"
-			if len(ref) > len(prefix) && ref[:len(prefix)] == prefix {
-				name := ref[len(prefix):]
-				if def, ok := defs[name]; ok {
-					// replace map contents with a shallow copy of def
+			if name, ok := defRefName(ref); ok {
+				if def, ok := defs[name].(map[string]any); ok {
+					// Sibling keywords (for example description) stay; $ref is replaced
+					// by the shared definition. Nested #/$defs refs are expanded on the
+					// copy first so they are not missed when new map keys are added.
 					delete(n, "$ref")
-					if defMap, ok := def.(map[string]any); ok {
-						for k, v := range defMap {
-							if _, exists := n[k]; !exists {
-								n[k] = deepCopyJSON(v)
-							}
+					copied, _ := deepCopyJSON(def).(map[string]any)
+					inlineRefs(copied, defs)
+					for k, v := range copied {
+						if _, exists := n[k]; !exists {
+							n[k] = v
 						}
 					}
 				}
@@ -124,6 +125,29 @@ func inlineRefs(node any, defs map[string]any) {
 			inlineRefs(v, defs)
 		}
 	}
+}
+
+// defRefName returns the $defs key for a shared-definition reference.
+// External refs look like defs.json#/$defs/FileFormat. After a definition is
+// inlined, its internal refs look like #/$defs/FileFormat.
+func defRefName(ref string) (string, bool) {
+	const (
+		filePrefix  = "defs.json#/$defs/"
+		localPrefix = "#/$defs/"
+	)
+	var name string
+	switch {
+	case strings.HasPrefix(ref, filePrefix):
+		name = ref[len(filePrefix):]
+	case strings.HasPrefix(ref, localPrefix):
+		name = ref[len(localPrefix):]
+	default:
+		return "", false
+	}
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func deepCopyJSON(v any) any {

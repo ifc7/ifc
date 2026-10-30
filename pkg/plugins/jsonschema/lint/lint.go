@@ -11,7 +11,7 @@ import (
 	"github.com/daveshanley/vacuum/motor"
 	"github.com/daveshanley/vacuum/rulesets"
 	"github.com/daveshanley/vacuum/statistics"
-	"go.yaml.in/yaml/v4"
+	"github.com/pb33f/go-yaml"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
 )
