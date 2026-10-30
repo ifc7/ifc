@@ -95,10 +95,27 @@ func TestMain(m *testing.M) {
 }
 
 func TestLoad(t *testing.T) {
-	// run from project root
-	_, filename, _, _ := runtime.Caller(0)
-	dir := path.Join(path.Dir(filename), "../..")
-	err := os.Chdir(dir)
+	tempDir, err := os.MkdirTemp("", "TestLoad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+	ifcFile, err := os.ReadFile("ifc.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(tempDir)
+	err = os.WriteFile("ifc.yaml", ifcFile, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Mkdir(".ifc", 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileName := ".ifc/manifest.json"
+	content := []byte("{}")
+	err = os.WriteFile(fileName, content, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
