@@ -27,6 +27,11 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Install code generation tools
+        run: |
+          go install go.uber.org/mock/mockgen@v0.6.0
+          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
