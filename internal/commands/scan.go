@@ -24,6 +24,9 @@ Only updates ifc.yaml; run ifc commit to snapshot selected files.
 `,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if nonInteractive(cmd) {
+			return fmt.Errorf("ifc scan needs an interactive terminal; use 'ifc add <path> <name>' with --%s", nonInteractiveFlag)
+		}
 		proj, err := project.Load()
 		if err != nil {
 			return fmt.Errorf("error loading project config: %w", err)

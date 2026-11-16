@@ -13,7 +13,7 @@ import (
 // WriteFile writes the given data to a file at the given path. It creates the file if it does not exist, and overwrites it if it does.
 // If directories in the file path do not exist, they are created.
 func WriteFile(data []byte, filePath string) error {
-	fmt.Println("Writing file to", filePath)
+	fmt.Fprintln(os.Stderr, "Writing file to", filePath)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		dir := filepath.Dir(filePath)
 		err = os.MkdirAll(dir, 0777)
@@ -72,7 +72,7 @@ func DirExists(path string) bool {
 			return false // Path does not exist
 		}
 		// Handle other potential errors like permission issues
-		fmt.Printf("Error during os.Stat for path %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "Error during os.Stat for path %s: %v\n", path, err)
 		return false
 	}
 	return info.IsDir() // Returns true if it is a directory
@@ -86,7 +86,7 @@ func FileExists(path string) bool {
 			return false // Path does not exist
 		}
 		// Handle other potential errors like permission issues
-		fmt.Printf("Error during os.Stat for path %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "Error during os.Stat for path %s: %v\n", path, err)
 	}
 	return !info.IsDir()
 }

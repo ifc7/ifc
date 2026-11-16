@@ -19,7 +19,7 @@ Arguments:
   name  Local name used by other ifc commands
 
 If the file does not exist, you will be asked to create it (including any
-missing folders). Only updates ifc.yaml. Run ifc commit to snapshot the file
+missing folders); with --non-interactive it fails instead. Only updates ifc.yaml. Run ifc commit to snapshot the file
 into the manifest.
 `,
 	Args: cobra.ExactArgs(2),
@@ -37,8 +37,9 @@ into the manifest.
 			return fmt.Errorf("error loading project config: %w", err)
 		}
 		err = proj.Add(cmd.Context(), project.AddParams{
-			Path: args[0],
-			Name: args[1],
+			Path:           args[0],
+			Name:           args[1],
+			NonInteractive: nonInteractive(cmd),
 		})
 		if err != nil {
 			return fmt.Errorf("error adding locally owned interface: %w", err)

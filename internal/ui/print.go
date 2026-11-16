@@ -2,48 +2,71 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 )
 
 // Successln prints a success message with a green checkmark.
 func Successln(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	fmt.Println(render(Success, "✓") + " " + msg)
+	Fsuccessln(os.Stdout, format, args...)
+}
+
+// Fsuccessln is Successln writing to w.
+func Fsuccessln(w io.Writer, format string, args ...any) {
+	fprintln(w, Success, "✓", format, args...)
 }
 
 // Errorln prints an error message with a red cross (to stdout).
 func Errorln(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	fmt.Println(render(Error, "✗") + " " + msg)
+	fprintln(os.Stdout, Error, "✗", format, args...)
 }
 
 // Warnln prints a warning message.
 func Warnln(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	fmt.Println(render(Warning, "!") + " " + msg)
+	Fwarnln(os.Stdout, format, args...)
+}
+
+// Fwarnln is Warnln writing to w.
+func Fwarnln(w io.Writer, format string, args ...any) {
+	fprintln(w, Warning, "!", format, args...)
 }
 
 // Infoln prints a muted informational message.
 func Infoln(format string, args ...any) {
+	Finfoln(os.Stdout, format, args...)
+}
+
+// Finfoln is Infoln writing to w.
+func Finfoln(w io.Writer, format string, args ...any) {
+	fprintln(w, Muted, "·", format, args...)
+}
+
+func fprintln(w io.Writer, style lipgloss.Style, icon, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Println(render(Muted, "·") + " " + msg)
+	_, _ = fmt.Fprintln(w, render(style, icon)+" "+msg)
 }
 
 // PrintMessages styles a batch of command result lines by content heuristics.
 func PrintMessages(messages []string) {
+	FprintMessages(os.Stdout, messages)
+}
+
+// FprintMessages is PrintMessages writing to w.
+func FprintMessages(w io.Writer, messages []string) {
 	for _, message := range messages {
 		switch {
-		case strings.HasPrefix(message, "Skipped"), strings.Contains(message, "Cancelled"):
-			Warnln("%s", message)
+		case strings.HasPrefix(message, "Skipped"), strings.HasPrefix(message, "Skipping"), strings.Contains(message, "Cancelled"):
+			Fwarnln(w, "%s", message)
 		case strings.Contains(message, "up to date"):
-			Infoln("%s", message)
+			Finfoln(w, "%s", message)
 		default:
-			Successln("%s", message)
+			Fsuccessln(w, "%s", message)
 		}
 	}
 }

@@ -35,13 +35,15 @@ Build Time: %s`,
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		fmt.Println(ui.Apply(ui.Error, fmt.Sprintf("Error: %v", err)))
+		_, _ = fmt.Fprintln(os.Stderr, ui.Apply(ui.Error, fmt.Sprintf("Error: %v", err)))
 		os.Exit(1)
 	}
 }
 
 func init() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
+	rootCmd.PersistentFlags().Bool(nonInteractiveFlag, false,
+		"never prompt; fail where input is needed (implied when CI=true or stdin is not a terminal)")
 	//cobra.OnInitialize(initConfig)
 	//rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./ifc/config.yaml)")
 }
