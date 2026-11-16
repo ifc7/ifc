@@ -15,6 +15,7 @@ require (
 	github.com/pb33f/libopenapi v0.41.8
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.24.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -77,7 +78,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/xo/terminfo v1.3.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.8.7 // indirect

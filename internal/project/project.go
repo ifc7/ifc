@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/http"
 	"os"
@@ -63,17 +65,29 @@ func New(opts ...Option) (*Project, error) {
 	return proj, nil
 }
 
-// Load loads a project from local files
-func Load() (*Project, error) {
+// WithClient sets the hub client instead of creating one from the environment.
+func WithClient(c client.ClientWithResponsesIfc) Option {
+	return func(p *Project) {
+		p.client = c
+	}
+}
+
+// Load loads a project from local files. ifc.yaml must exist. A missing
+// .ifc/manifest.json is treated as an empty manifest (as on a fresh checkout, where
+// .ifc/ is gitignored); a malformed one is an error.
+func Load(opts ...Option) (*Project, error) {
 	config, err := ReadConfig(internal.IfcConfigFile)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 	manifest, err := ReadManifest(internal.IfcManifestPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		manifest, err = NewManifest(), nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error reading manifest file: %w", err)
 	}
-	project, err := New()
+	project, err := New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating project: %w", err)
 	}
@@ -196,6 +210,8 @@ func (p *Project) Use(ctx context.Context, params UseParams) error {
 type AddParams struct {
 	Name string
 	Path string
+	// NonInteractive fails instead of offering to create a missing file.
+	NonInteractive bool
 }
 
 // Add adds a local interface to the project's "own" list in (ifc.yaml).
@@ -231,6 +247,9 @@ func (p *Project) ensureOwnedFile(ctx context.Context, params AddParams) error {
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("error checking path %q: %w", params.Path, err)
 	}
+	if params.NonInteractive {
+		return fmt.Errorf("file %s does not exist", params.Path)
+	}
 	if err := promptCreateMissingFile(ctx, params.Path, params.Name); err != nil {
 		return fmt.Errorf("error creating missing file: %w", err)
 	}
@@ -243,6 +262,8 @@ func (p *Project) ensureOwnedFile(ctx context.Context, params AddParams) error {
 // FetchParams holds parameters that can be passed to the Fetch method
 type FetchParams struct {
 	Ref string
+	// Owned fetches only owned interfaces that have a ref, skipping the use list.
+	Owned bool
 }
 
 // fetchConcurrency is the maximum number of in-flight hub requests for one Fetch.
@@ -256,7 +277,11 @@ func (p *Project) Fetch(ctx context.Context, params FetchParams) error {
 		return p.fetch(ctx, params.Ref, &mu, sem)
 	}
 	g, ctx := errgroup.WithContext(ctx)
-	for _, ref := range trackedFetchRefs(p.config) {
+	refs := trackedFetchRefs(p.config)
+	if params.Owned {
+		refs = ownedFetchRefs(p.config)
+	}
+	for _, ref := range refs {
 		g.Go(func() error {
 			if err := p.fetch(ctx, ref, &mu, sem); err != nil {
 				return fmt.Errorf("error fetching ref %s: %w", ref, err)
@@ -269,6 +294,15 @@ func (p *Project) Fetch(ctx context.Context, params FetchParams) error {
 
 // trackedFetchRefs returns use refs, then owned refs, skipping blanks and duplicates.
 func trackedFetchRefs(cfg Config) []string {
+	return uniqueRefs(cfg.Use, cfg.Own)
+}
+
+// ownedFetchRefs returns owned refs, skipping blanks and duplicates.
+func ownedFetchRefs(cfg Config) []string {
+	return uniqueRefs(nil, cfg.Own)
+}
+
+func uniqueRefs(use []Used, own []Owned) []string {
 	seen := make(map[string]struct{})
 	var refs []string
 	add := func(ref string) {
@@ -281,11 +315,11 @@ func trackedFetchRefs(cfg Config) []string {
 		seen[ref] = struct{}{}
 		refs = append(refs, ref)
 	}
-	for _, u := range cfg.Use {
+	for _, u := range use {
 		add(u.Ref)
 	}
-	for _, u := range cfg.Own {
-		add(u.Ref)
+	for _, o := range own {
+		add(o.Ref)
 	}
 	return refs
 }
@@ -293,6 +327,19 @@ func trackedFetchRefs(cfg Config) []string {
 // CommitParams holds parameters that can be passed to the Commit method
 type CommitParams struct {
 	Ref string
+	// Notes, when set, are used for every revision this commit creates instead of prompting.
+	Notes *string
+	// NonInteractive never prompts: notes default to empty and owned interfaces
+	// without a ref are skipped with a warning.
+	NonInteractive bool
+	// Warn receives warnings such as skipped interfaces. Nil discards them.
+	Warn func(message string)
+}
+
+func (params CommitParams) warn(message string) {
+	if params.Warn != nil {
+		params.Warn(message)
+	}
 }
 
 // Commit adds local changes to owned interfaces to the manifest
@@ -300,13 +347,17 @@ func (p *Project) Commit(ctx context.Context, params CommitParams) error {
 	if params.Ref != "" {
 		for _, o := range p.config.Own {
 			if o.Ref == params.Ref {
-				return p.commit(ctx, o)
+				return p.commit(ctx, o, params)
 			}
 		}
 		return ErrInvalidRef
 	}
 	for _, o := range p.config.Own {
-		err := p.commit(ctx, o)
+		if params.NonInteractive && o.Ref == "" {
+			params.warn(skipNoRefMessage(o.Name))
+			continue
+		}
+		err := p.commit(ctx, o, params)
 		if err != nil {
 			return fmt.Errorf("error committing ref %s: %w", o.Ref, err)
 		}
@@ -317,38 +368,96 @@ func (p *Project) Commit(ctx context.Context, params CommitParams) error {
 // PushParams holds parameters that can be passed to the Push method
 type PushParams struct {
 	Name string
+	// NonInteractive never prompts: owned interfaces without a ref are skipped.
+	NonInteractive bool
 }
 
-// Push pushes local changes to the remote server. It returns user-facing status messages.
-func (p *Project) Push(ctx context.Context, params PushParams) ([]string, error) {
+// PushStatus is the outcome of pushing one owned interface.
+type PushStatus string
+
+const (
+	PushStatusPushed       PushStatus = "pushed"
+	PushStatusUpToDate     PushStatus = "up_to_date"
+	PushStatusSkipped      PushStatus = "skipped"
+	PushStatusFailed       PushStatus = "failed"
+	PushStatusNotAttempted PushStatus = "not_attempted"
+)
+
+// PushResult reports what Push did with one owned interface.
+type PushResult struct {
+	Name        string     `json:"name"`
+	Ref         string     `json:"ref,omitempty"`
+	Path        string     `json:"path"`
+	Status      PushStatus `json:"status"`
+	RevisionIDs []string   `json:"revisionIds,omitempty"`
+	Reason      string     `json:"reason,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
+// PushReport is the outcome of a Push: one result per targeted owned interface, in
+// ifc.yaml order, plus user-facing status messages. It is the shape of push --json.
+type PushReport struct {
+	Interfaces []PushResult `json:"interfaces"`
+	Messages   []string     `json:"-"`
+}
+
+// NewPushReport returns an empty report whose JSON form lists no interfaces.
+func NewPushReport() *PushReport {
+	return &PushReport{Interfaces: []PushResult{}}
+}
+
+// Push pushes local changes to the remote server. Push stops at the first interface
+// that fails; that one is reported as failed and the rest as not attempted. The
+// report is always non-nil and reflects partial progress when err is not nil.
+func (p *Project) Push(ctx context.Context, params PushParams) (*PushReport, error) {
+	report := NewPushReport()
 	targets, err := p.ownedToPush(params)
 	if err != nil {
-		return nil, err
+		return report, err
 	}
 	if targets == nil {
-		return []string{"No owned interfaces to push."}, nil
+		report.Messages = []string{"No owned interfaces to push."}
+		return report, nil
+	}
+	for _, o := range targets {
+		report.Interfaces = append(report.Interfaces, PushResult{
+			Name:   o.Name,
+			Ref:    o.Ref,
+			Path:   o.Path,
+			Status: PushStatusNotAttempted,
+		})
 	}
 	session := &pushSession{}
-	for _, o := range targets {
-		if o.Ref == "" {
-			if err := session.loadOwnerChoices(ctx, p); err != nil {
-				return nil, err
+	if !params.NonInteractive {
+		for _, o := range targets {
+			if o.Ref == "" {
+				if err := session.loadOwnerChoices(ctx, p); err != nil {
+					return report, err
+				}
+				break
 			}
-			break
 		}
 	}
-	var messages []string
-	for _, o := range targets {
-		msgs, err := p.push(ctx, o, session)
+	for i, o := range targets {
+		result := &report.Interfaces[i]
+		if params.NonInteractive && o.Ref == "" {
+			result.Status = PushStatusSkipped
+			result.Reason = skipNoRefReason
+			report.Messages = append(report.Messages, skipNoRefMessage(o.Name))
+			continue
+		}
+		msgs, err := p.push(ctx, o, session, result)
+		report.Messages = append(report.Messages, msgs...)
 		if err != nil {
+			result.Status = PushStatusFailed
+			result.Error = err.Error()
 			if params.Name != "" {
-				return messages, err
+				return report, err
 			}
-			return messages, fmt.Errorf("error pushing interface %q: %w", o.Name, err)
+			return report, fmt.Errorf("error pushing interface %q: %w", o.Name, err)
 		}
-		messages = append(messages, msgs...)
 	}
-	return messages, nil
+	return report, nil
 }
 
 // ownedToPush returns the owned interfaces selected by params.
@@ -671,8 +780,32 @@ func withPermit[T any](ctx context.Context, sem *semaphore.Weighted, fn func() (
 	return fn()
 }
 
+// skipNoRefMessage is the warning for an owned interface skipped in non-interactive mode.
+func skipNoRefMessage(name string) string {
+	return fmt.Sprintf("Skipping %q: no ref in ifc.yaml. Run 'ifc push' interactively once to create it.", name)
+}
+
+// skipNoRefReason is the push --json reason for an owned interface without a ref.
+const skipNoRefReason = "no ref in ifc.yaml"
+
+// revisionNotes returns the notes for a new revision of name, prompting only when
+// interactive and no notes were given.
+func revisionNotes(ctx context.Context, name string, params CommitParams) (string, error) {
+	if params.Notes != nil {
+		return *params.Notes, nil
+	}
+	if params.NonInteractive {
+		return "", nil
+	}
+	newRev, err := promptNewRevisionCommit(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("error prompting for new revision: %w", err)
+	}
+	return newRev.Notes, nil
+}
+
 // commit adds local changes to the manifest
-func (p *Project) commit(ctx context.Context, own Owned) error {
+func (p *Project) commit(ctx context.Context, own Owned, params CommitParams) error {
 	key, err := p.manifestKeyForOwned(ctx, own)
 	if err != nil {
 		return err
@@ -684,6 +817,12 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 	sha := sha256Checksum(b)
 	encoded := base64Encode(b)
 	_, manifestIfc, ok := p.manifest.findInterface(key)
+	if !ok && params.NonInteractive {
+		if own.Ref == "" {
+			return fmt.Errorf("interface %q has no ref in ifc.yaml; run 'ifc push' interactively once to create it", own.Name)
+		}
+		return fmt.Errorf("interface %q (%s) is not in the local manifest; run 'ifc fetch --owned' first", own.Name, own.Ref)
+	}
 	if !ok {
 		specType, err := DetectSpecificationType(b)
 		if err != nil {
@@ -696,6 +835,9 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 		newIfc, err := promptNewInterfaceCommit(ctx, own.Name, specType)
 		if err != nil {
 			return fmt.Errorf("error prompting for new interface: %w", err)
+		}
+		if params.Notes != nil {
+			newIfc.RevisionNotes = *params.Notes
 		}
 		revision := client.InterfaceRevision{
 			Checksum:      sha,
@@ -737,9 +879,9 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 			if err != nil {
 				return fmt.Errorf("not authenticated: please run 'ifc login' first")
 			}
-			newRev, err := promptNewRevisionCommit(ctx, own.Name)
+			notes, err := revisionNotes(ctx, own.Name, params)
 			if err != nil {
-				return fmt.Errorf("error prompting for new revision: %w", err)
+				return err
 			}
 			revision := client.InterfaceRevision{
 				Checksum:      sha,
@@ -747,7 +889,7 @@ func (p *Project) commit(ctx context.Context, own Owned) error {
 				CreatedBy:     userID,
 				Specification: encoded,
 				Id:            sha,
-				Notes:         &newRev.Notes,
+				Notes:         &notes,
 			}
 			manifestIfc.Revisions[sha] = &revision
 			manifestIfc.LatestRevision = &revision
@@ -879,7 +1021,8 @@ func interfaceIdentityComplete(ifc client.Interface) bool {
 }
 
 // push saves an interface revision or creates a new interface on the server.
-func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]string, error) {
+// It fills in result's status, ref and created revision IDs.
+func (p *Project) push(ctx context.Context, own Owned, session *pushSession, result *PushResult) ([]string, error) {
 	// for each owned interface
 	// 1. check if there is an entry checked into the manifest
 	// 2. if so, is there a ref in the owned entry?
@@ -892,6 +1035,8 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 	}
 	_, manifestEntry, ok := p.manifest.findInterface(manifestKey)
 	if !ok {
+		result.Status = PushStatusSkipped
+		result.Reason = "no manifest entry; run 'ifc commit' first"
 		return []string{fmt.Sprintf("Skipping %q: no manifest entry for interface %s. Run 'ifc commit' first.", own.Name, manifestKey)}, nil
 	}
 
@@ -930,6 +1075,7 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 			return messages, fmt.Errorf("created interface %s missing canonicalUrl: %w", interfaceId, err)
 		}
 		messages = append(messages, fmt.Sprintf("Created interface %q (%s).", own.Name, cfgRef))
+		result.Ref = cfgRef
 		// Replace the temporary manifest key (the interface name) with the
 		// server-assigned canonicalUrl and record the interface ID.
 		if err := p.manifest.reassignInterfaceKey(manifestKey, interfaceId, canonicalURL); err != nil {
@@ -948,7 +1094,7 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 		})
 		for _, revKey := range revKeys {
 			rev := manifestEntry.Revisions[revKey]
-			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, interfaceId, client.CreateRevisionRequest{
+			created, err := p.client.CreateInterfaceRevisionWithResponse(ctx, interfaceId, client.CreateRevisionRequest{
 				CreatedBy:     userID,
 				Specification: rev.Specification,
 				Notes:         rev.Notes,
@@ -956,19 +1102,20 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 			if err != nil {
 				return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
 			}
-			if result.StatusCode() != http.StatusCreated {
-				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+			if created.StatusCode() != http.StatusCreated {
+				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, created.StatusCode())
 			}
-			if result.JSON201 == nil {
+			if created.JSON201 == nil {
 				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 			}
-			if err := p.recordPushedRevision(canonicalURL, revKey, result.JSON201); err != nil {
+			if err := p.recordPushedRevision(canonicalURL, revKey, created.JSON201); err != nil {
 				return messages, err
 			}
+			result.RevisionIDs = append(result.RevisionIDs, created.JSON201.Id)
 			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
 		for _, rel := range manifestEntry.Releases {
-			result, err := p.client.CreateInterfaceReleaseWithResponse(ctx, interfaceId, client.CreateReleaseRequest{
+			created, err := p.client.CreateInterfaceReleaseWithResponse(ctx, interfaceId, client.CreateReleaseRequest{
 				InterfaceRevisionId: rel.InterfaceRevisionId,
 				Notes:               rel.Notes,
 				SemVer:              rel.SemanticVersion,
@@ -977,11 +1124,12 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 			if err != nil {
 				return messages, fmt.Errorf("error creating release %s: %w", rel.SemanticVersion, err)
 			}
-			if result.StatusCode() != http.StatusCreated {
-				return messages, fmt.Errorf("error creating release %s: HTTP %d", rel.SemanticVersion, result.StatusCode())
+			if created.StatusCode() != http.StatusCreated {
+				return messages, fmt.Errorf("error creating release %s: HTTP %d", rel.SemanticVersion, created.StatusCode())
 			}
 			messages = append(messages, fmt.Sprintf("Pushed release %s for %q.", rel.SemanticVersion, own.Name))
 		}
+		result.Status = PushStatusPushed
 		return messages, nil
 	}
 
@@ -1054,7 +1202,7 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 			rev := manifestEntry.Revisions[revKey]
 			// TODO: check if revisions existing in server need updating
 			// TODO: add API endpoint for updating revisions
-			result, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
+			created, err := p.client.CreateInterfaceRevisionWithResponse(ctx, id, client.CreateRevisionRequest{
 				CreatedBy:     userID,
 				Specification: rev.Specification,
 				Notes:         rev.Notes,
@@ -1062,21 +1210,25 @@ func (p *Project) push(ctx context.Context, own Owned, session *pushSession) ([]
 			if err != nil {
 				return messages, fmt.Errorf("error creating revision %s: %w", rev.Id, err)
 			}
-			if result.StatusCode() != http.StatusCreated {
-				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, result.StatusCode())
+			if created.StatusCode() != http.StatusCreated {
+				return messages, fmt.Errorf("error creating revision %s: HTTP %d", rev.Id, created.StatusCode())
 			}
-			if result.JSON201 == nil {
+			if created.JSON201 == nil {
 				return messages, fmt.Errorf("error creating revision %s: unexpected response body", rev.Id)
 			}
-			if err := p.recordPushedRevision(manifestInterfaceKey(manifestEntry.Interface), revKey, result.JSON201); err != nil {
+			if err := p.recordPushedRevision(manifestInterfaceKey(manifestEntry.Interface), revKey, created.JSON201); err != nil {
 				return messages, err
 			}
+			result.RevisionIDs = append(result.RevisionIDs, created.JSON201.Id)
 			messages = append(messages, fmt.Sprintf("Pushed revision for %q.", own.Name))
 		}
 	}
 	// TODO: handle releases
-	if len(messages) == 0 {
+	if len(result.RevisionIDs) == 0 {
+		result.Status = PushStatusUpToDate
 		messages = append(messages, fmt.Sprintf("Interface %q is up to date.", own.Name))
+	} else {
+		result.Status = PushStatusPushed
 	}
 	return messages, nil
 }

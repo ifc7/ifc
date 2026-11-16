@@ -15,7 +15,10 @@ var fetchCmd = &cobra.Command{
 Fetch interface metadata and revisions from the hub into .ifc/manifest.json
 for every tracked entry in ifc.yaml (use list, and owned interfaces with a ref).
 
-Requires login. Does not take arguments.
+With --owned, fetches only owned interfaces that have a ref and skips the use
+list (as in CI, where the token may not read other owners' interfaces).
+
+Requires login or IFC_TOKEN. Does not take arguments.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -23,7 +26,11 @@ Requires login. Does not take arguments.
 		if err != nil {
 			return fmt.Errorf("error loading project config: %w", err)
 		}
-		err = proj.Fetch(cmd.Context(), project.FetchParams{})
+		owned, err := cmd.Flags().GetBool("owned")
+		if err != nil {
+			return err
+		}
+		err = proj.Fetch(cmd.Context(), project.FetchParams{Owned: owned})
 		if err != nil {
 			return fmt.Errorf("error fetching interfaces: %w", err)
 		}
@@ -36,5 +43,6 @@ Requires login. Does not take arguments.
 }
 
 func init() {
+	fetchCmd.Flags().Bool("owned", false, "fetch only owned interfaces that have a ref")
 	rootCmd.AddCommand(fetchCmd)
 }
