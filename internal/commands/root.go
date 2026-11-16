@@ -26,6 +26,7 @@ Build Version: %s
 Git Commit: %s
 Build Time: %s`,
 		internal.BuildVersion, internal.GitCommit, internal.BuildTime),
+	Version:       internal.BuildVersion,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }

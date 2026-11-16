@@ -1,0 +1,46 @@
+# Release binaries for the ifc CLI. Run by .github/workflows/release.yml on a v* tag.
+# Local check: goreleaser release --snapshot --clean
+#
+# Asset names are a contract with ifc7/ifc-action, which downloads
+#   https://github.com/ifc7/ifc/releases/download/<tag>/ifc_<version>_<os>_<arch>.tar.gz
+# (version without the leading v) and verifies it against checksums.txt.
+version: 2
+
+project_name: ifc
+
+builds:
+  - id: ifc
+    main: ./cmd/ifc
+    binary: ifc
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/ifc7/ifc/internal.BuildVersion={{ .Tag }}
+      - -X github.com/ifc7/ifc/internal.GitCommit={{ .ShortCommit }}
+      - -X github.com/ifc7/ifc/internal.BuildTime={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: ifc
+    ids: [ifc]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  draft: false
+  prerelease: auto

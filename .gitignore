@@ -38,3 +38,6 @@ bin/
 # ifc7
 .ifc/
 
+
+# goreleaser output
+dist/

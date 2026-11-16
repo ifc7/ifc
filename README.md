@@ -13,7 +13,20 @@ Publish, discover, and share OpenAPI and JSON Schema interfaces on **[ifc7.dev](
 
 # Installation
 
-With Go 1.26.5 or later installed, `make install` will build and copy the `ifc` binary to your `$GOPATH/bin` directory.
+Prebuilt binaries for Linux and macOS (amd64, arm64) are attached to each [GitHub release](https://github.com/ifc7/ifc/releases):
+
+```bash
+version=0.1.0  # without the leading v
+curl -sSfL "https://github.com/ifc7/ifc/releases/download/v${version}/ifc_${version}_linux_amd64.tar.gz" | tar -xz ifc
+```
+
+Each release also has a `checksums.txt` (sha256) for the archives.
+
+Or, with Go 1.26.5 or later, `go install github.com/ifc7/ifc/cmd/ifc@latest`, or `make install` from a checkout, which builds and copies the `ifc` binary to your `$GOPATH/bin` directory.
+
+### Releasing
+
+Push a `v*` tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`). The Release workflow runs lint and tests, then [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`) builds the binaries and publishes the release. Check the config locally with `goreleaser release --snapshot --clean`.
 
 ---
 
