@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ifc7/ifc/internal"
@@ -20,29 +21,73 @@ type Ifc7ApiClient struct {
 	credentialsService *auth.CredentialsService
 }
 
-// NewAPIClient creates an API client with bearer token injection when credentials are provided.
+// ErrTokenRejected is returned for any hub response with HTTP 401 while $IFC_TOKEN is in use.
+var ErrTokenRejected = fmt.Errorf("%s was rejected by the hub (HTTP 401); it may have expired", internal.EnvToken)
+
+// NewAPIClient creates a client for the hub API at $IFC_HUB_URL (default https://ifc7.dev).
+// A non-empty $IFC_TOKEN is sent as the bearer token on every request; the stored login
+// is then never read, written or refreshed. Otherwise the stored login is used when present.
 func NewAPIClient(ctx context.Context, opts ...ClientOption) (*Ifc7ApiClient, error) {
-	client := &Ifc7ApiClient{}
-
-	credsService, err := auth.NewCredentialsService()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize credentials service: %w", err)
-	}
-	client.credentialsService = credsService
-
-	err = client.credentialsService.ReadCredentials()
-	if err != nil {
-		slog.Warn("failed to read client credentials", "error", err.Error())
-	} else {
-		opts = append(opts, WithRequestEditorFn(client.bearerTokenEditor()))
-	}
-	clientWithResponses, err := NewClientWithResponses(internal.DefaultAPIURL, opts...)
+	apiURL, err := internal.APIURL()
 	if err != nil {
 		return nil, err
+	}
+	client := &Ifc7ApiClient{}
+
+	envToken := os.Getenv(internal.EnvToken)
+	if envToken != "" {
+		opts = append(opts, WithRequestEditorFn(staticBearerTokenEditor(envToken)))
+	} else {
+		credsService, err := auth.NewCredentialsService()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize credentials service: %w", err)
+		}
+		client.credentialsService = credsService
+
+		err = client.credentialsService.ReadCredentials()
+		if err != nil {
+			slog.Warn("failed to read client credentials", "error", err.Error())
+		} else {
+			opts = append(opts, WithRequestEditorFn(client.bearerTokenEditor()))
+		}
+	}
+	clientWithResponses, err := NewClientWithResponses(apiURL, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if envToken != "" {
+		if underlying, ok := clientWithResponses.ClientInterface.(*Client); ok {
+			underlying.Client = rejectUnauthorized{doer: underlying.Client}
+		}
 	}
 	client.ClientWithResponses = clientWithResponses
 
 	return client, nil
+}
+
+// staticBearerTokenEditor sets a fixed bearer token on each request.
+func staticBearerTokenEditor(token string) RequestEditorFn {
+	return func(_ context.Context, req *http.Request) error {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+}
+
+// rejectUnauthorized turns HTTP 401 responses into ErrTokenRejected.
+type rejectUnauthorized struct {
+	doer HttpRequestDoer
+}
+
+func (r rejectUnauthorized) Do(req *http.Request) (*http.Response, error) {
+	rsp, err := r.doer.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if rsp.StatusCode == http.StatusUnauthorized {
+		_ = rsp.Body.Close()
+		return nil, ErrTokenRejected
+	}
+	return rsp, nil
 }
 
 // CurrentUserID returns the ID of the authenticated user.
