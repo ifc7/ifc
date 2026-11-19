@@ -24,12 +24,13 @@ import (
 	"github.com/ifc7/ifc/internal/client"
 	"github.com/ifc7/ifc/internal/pkg/fileio"
 	"github.com/ifc7/ifc/internal/tui"
+	"github.com/ifc7/ifc/pkg/spec"
 )
 
 var (
 	ErrProjectExists        = fmt.Errorf("project already exists")
 	ErrInvalidRef           = fmt.Errorf("invalid reference")
-	ErrInvalidSpecification = fmt.Errorf("invalid interface specification")
+	ErrInvalidSpecification = spec.ErrInvalidSpecification
 
 	promptNewInterfaceCommit = tui.PromptNewInterfaceCommit
 	promptNewRevisionCommit  = tui.PromptNewRevisionCommit

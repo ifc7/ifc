@@ -19,7 +19,7 @@ func TestDefaultRegistry_LintOpenAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "openapi-lint@v1" {
+	if id != "openapi-lint@v2" {
 		t.Fatalf("plugin id = %q", id)
 	}
 	if out.Score < 0 || out.Score > 100 {
@@ -75,7 +75,7 @@ func TestDefaultRegistry_LintJSONSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "jsonschema-lint@v1" {
+	if id != "jsonschema-lint@v2" {
 		t.Fatalf("plugin id = %q", id)
 	}
 	if out.Score < 0 || out.Score > 100 {

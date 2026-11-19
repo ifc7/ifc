@@ -10,6 +10,7 @@ import (
 	"github.com/kaptinlin/jsonschema"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
+	openapilint "github.com/ifc7/ifc/pkg/plugins/openapi/lint"
 )
 
 func TestLintOutputMatchesSchema(t *testing.T) {
@@ -57,12 +58,59 @@ func TestCompareInputMatchesSchema(t *testing.T) {
 	assertValid(t, schema, in)
 }
 
+func TestLintOutputV1MatchesSchema(t *testing.T) {
+	schema := loadSchema(t, "v1/lint-output.json")
+	out := contract.LintOutput{
+		Score: 95,
+		Raw:   "warn[operation-operationId]: missing\n",
+		Findings: []contract.Finding{{
+			RuleID:           "operation-operationId",
+			Severity:         contract.SeverityWarn,
+			Message:          "missing",
+			Pointer:          "/paths/~1pets/get",
+			Range:            &contract.Range{Start: contract.Position{Line: 3, Column: 5}, End: contract.Position{Line: 3, Column: 8}},
+			Fingerprint:      strings.Repeat("a", 64),
+			DocumentationURL: "https://quobix.com/vacuum/rules/operations/operation-operationid",
+		}},
+		Engine: &contract.Engine{Name: "vacuum", Version: "v0.41.0"},
+		Extra:  map[string]any{"findingCounts": map[string]int{"error": 0, "warn": 1, "info": 0, "hint": 0}},
+	}
+	assertValid(t, schema, out)
+}
+
+func TestLintInputV1MatchesSchema(t *testing.T) {
+	schema := loadSchema(t, "v1/lint-input.json")
+	in := contract.LintInput{
+		InterfaceType: contract.InterfaceTypeOpenAPI,
+		Document:      contract.NewSpecificationDocument([]byte("openapi: \"3.0.3\"\n"), contract.FileFormatYAML),
+		Ruleset:       contract.NewRulesetDocument([]byte("extends: ifc7:recommended\n"), strings.Repeat("b", 64)),
+	}
+	assertValid(t, schema, in)
+}
+
+func TestV0LintOutputStillValidForV0Consumers(t *testing.T) {
+	// A v1 output without findings and engine is a valid v0 output.
+	schema := loadSchema(t, "lint-output.json")
+	assertValid(t, schema, contract.LintOutput{Score: 100, Raw: ""})
+}
+
+func TestRulesetDocumentRoundTrip(t *testing.T) {
+	r := contract.NewRulesetDocument([]byte("rules: {}\n"), "x")
+	b, err := r.Decode()
+	if err != nil || string(b) != "rules: {}\n" {
+		t.Fatalf("got %q, %v", b, err)
+	}
+	if _, err := (contract.RulesetDocument{}).Decode(); err == nil {
+		t.Fatal("expected error for empty ruleset")
+	}
+}
+
 func loadSchema(t *testing.T, name string) *jsonschema.Schema {
 	t.Helper()
 	dir := filepath.Join("..", "testdata", "schemas")
 	compiler := jsonschema.NewCompiler()
 	// Load defs first so relative $refs resolve when compiling siblings.
-	defsPath := filepath.Join(dir, "defs.json")
+	defsPath := filepath.Join(dir, filepath.Dir(name), "defs.json")
 	defsBytes, err := os.ReadFile(defsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -176,4 +224,23 @@ func assertValid(t *testing.T, schema *jsonschema.Schema, value any) {
 	if !result.IsValid() {
 		t.Fatalf("schema validation failed: %v\nvalue=%s", result.Errors, string(b))
 	}
+}
+
+func TestRealLintOutputMatchesV1Schema(t *testing.T) {
+	schema := loadSchema(t, "v1/lint-output.json")
+	raw, err := os.ReadFile(filepath.Join("..", "testdata", "specs", "openapi-missing-opid.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := openapilint.Plugin{}.Lint(contract.LintInput{
+		InterfaceType: contract.InterfaceTypeOpenAPI,
+		Document:      contract.NewSpecificationDocument(raw, contract.FileFormatYAML),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Findings) == 0 {
+		t.Fatal("expected findings")
+	}
+	assertValid(t, schema, out)
 }

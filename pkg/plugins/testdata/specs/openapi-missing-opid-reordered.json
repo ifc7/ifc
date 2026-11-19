@@ -1,0 +1,13 @@
+{
+  "paths": {
+    "/pets": {
+      "get": {
+        "responses": {
+          "200": { "description": "ok" }
+        }
+      }
+    }
+  },
+  "info": { "version": "1.0.0", "title": "Pets" },
+  "openapi": "3.0.3"
+}

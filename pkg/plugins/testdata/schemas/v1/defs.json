@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v1/defs.json",
+  "$comment": "Shared definitions for ifc7 plugin input/output contracts (v1). v1 is a superset of v0.",
+  "title": "Plugin contract shared definitions",
+  "description": "Reusable building blocks for lint and compare plugin schemas.",
+  "$defs": {
+    "InterfaceType": {
+      "type": "string",
+      "description": "Interface type identifier (for example OPENAPI or JSON_SCHEMA). Expand this enum when new types are added.",
+      "enum": [
+        "JSON_SCHEMA",
+        "OPENAPI"
+      ],
+      "examples": [
+        "OPENAPI"
+      ]
+    },
+    "FileFormat": {
+      "type": "string",
+      "description": "Serialization format of the specification document bytes after base64 decoding.",
+      "enum": [
+        "json",
+        "yaml"
+      ],
+      "examples": [
+        "yaml"
+      ]
+    },
+    "SpecificationDocument": {
+      "type": "object",
+      "description": "A single interface specification payload.",
+      "additionalProperties": false,
+      "required": [
+        "specification",
+        "fileFormat"
+      ],
+      "properties": {
+        "specification": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 1,
+          "description": "Base64-encoded interface specification document."
+        },
+        "fileFormat": {
+          "$ref": "#/$defs/FileFormat"
+        }
+      }
+    },
+    "PluginOptions": {
+      "type": "object",
+      "description": "Optional plugin-specific settings. Unknown keys may be ignored. v0 imposes no required option keys.",
+      "default": {},
+      "additionalProperties": true
+    },
+    "SemanticExtra": {
+      "type": "object",
+      "description": "Optional extensions beyond the required semantic fields. Must not duplicate required semantic fields (score, breaking).",
+      "default": {},
+      "additionalProperties": true
+    },
+    "RawOutput": {
+      "type": "string",
+      "description": "Textual detail for this run. Empty string is allowed when there is nothing to report."
+    },
+    "RulesetDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document",
+        "sha256"
+      ],
+      "description": "An effective (fully resolved) OpenLint ruleset. Absent means the plugin's built-in default.",
+      "properties": {
+        "document": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 1,
+          "description": "Base64-encoded OpenLint ruleset, JSON or YAML."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex sha256 of the canonical ruleset bytes."
+        }
+      }
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "hint"
+      ],
+      "description": "Finding severity."
+    },
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "column"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "Range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "description": "1-based source span.",
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/Position"
+        },
+        "end": {
+          "$ref": "#/$defs/Position"
+        }
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "severity",
+        "message",
+        "pointer",
+        "fingerprint"
+      ],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "message": {
+          "type": "string"
+        },
+        "pointer": {
+          "type": "string",
+          "description": "JSON Pointer (RFC 6901) to the offending node. Empty string is the document root."
+        },
+        "range": {
+          "$ref": "#/$defs/Range"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of rule id, pointer and normalised message. Stable across formatting changes."
+        },
+        "documentationUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "Engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "examples": [
+        {
+          "name": "vacuum",
+          "version": "v0.41.0"
+        }
+      ]
+    }
+  }
+}
