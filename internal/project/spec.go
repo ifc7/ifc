@@ -1,107 +1,31 @@
 package project
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/kaptinlin/jsonschema"
-	"github.com/pb33f/libopenapi"
-	"gopkg.in/yaml.v3"
-
 	"github.com/ifc7/ifc/internal/client"
+	"github.com/ifc7/ifc/pkg/plugins/contract"
+	"github.com/ifc7/ifc/pkg/spec"
 )
 
 // DetectSpecificationType reports whether data is a valid OpenAPI or JSON Schema
-// document. OpenAPI is checked first so OpenAPI documents are not classified as
-// JSON Schema.
+// document. Detection and validation are delegated to pkg/spec so the CLI and
+// the hub accept the same documents.
 func DetectSpecificationType(data []byte) (client.InterfaceType, error) {
-	doc, err := parseYAMLOrJSONMap(data)
+	typ, err := spec.Detect(data)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrInvalidSpecification, err)
+		return "", err
 	}
-
-	if looksLikeOpenAPI(doc) {
-		if _, err := libopenapi.NewDocument(data); err != nil {
-			return "", fmt.Errorf("%w: invalid OpenAPI document: %w", ErrInvalidSpecification, err)
-		}
+	switch typ {
+	case contract.InterfaceTypeOpenAPI:
 		return client.OPENAPI, nil
-	}
-
-	if looksLikeJSONSchema(doc) {
-		jsonBytes, err := toJSONBytes(data)
-		if err != nil {
-			return "", fmt.Errorf("%w: %w", ErrInvalidSpecification, err)
-		}
-		if _, err := jsonschema.NewCompiler().Compile(jsonBytes); err != nil {
-			return "", fmt.Errorf("%w: invalid JSON Schema document: %w", ErrInvalidSpecification, err)
-		}
+	case contract.InterfaceTypeJSONSchema:
 		return client.JSONSCHEMA, nil
+	default:
+		return "", fmt.Errorf("%w: unsupported type %q", ErrInvalidSpecification, typ)
 	}
-
-	return "", ErrInvalidSpecification
-}
-
-func parseYAMLOrJSONMap(data []byte) (map[string]any, error) {
-	var doc map[string]any
-	if json.Valid(data) {
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return nil, err
-		}
-		return doc, nil
-	}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	if doc == nil {
-		return nil, fmt.Errorf("empty document")
-	}
-	return doc, nil
-}
-
-func toJSONBytes(data []byte) ([]byte, error) {
-	if json.Valid(data) {
-		return data, nil
-	}
-	var v any
-	if err := yaml.Unmarshal(data, &v); err != nil {
-		return nil, err
-	}
-	return json.Marshal(v)
-}
-
-func looksLikeOpenAPI(doc map[string]any) bool {
-	if _, ok := doc["openapi"]; ok {
-		return true
-	}
-	if _, ok := doc["swagger"]; ok {
-		return true
-	}
-	return false
-}
-
-func looksLikeJSONSchema(doc map[string]any) bool {
-	if _, ok := doc["$schema"]; ok {
-		return true
-	}
-	// Common JSON Schema shapes without an explicit $schema keyword.
-	if _, ok := doc["properties"]; ok {
-		return true
-	}
-	if _, ok := doc["$defs"]; ok {
-		return true
-	}
-	if _, ok := doc["definitions"]; ok {
-		return true
-	}
-	if t, ok := doc["type"].(string); ok {
-		switch t {
-		case "object", "array", "string", "number", "integer", "boolean", "null":
-			return true
-		}
-	}
-	return false
 }
 
 func isSpecCandidateExt(path string) bool {

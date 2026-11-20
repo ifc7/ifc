@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v1/lint-output.json",
+  "title": "Lint plugin output",
+  "description": "Output contract for interface linter plugins (v1). score and raw stay required; findings and engine are structured results. raw is rendered from findings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "score",
+    "raw"
+  ],
+  "properties": {
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "ifc7 quality score from 0 (worst) to 100 (best): round(100 * e^(-0.1 * sum(weight * count)))."
+    },
+    "raw": {
+      "$ref": "defs.json#/$defs/RawOutput"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/Finding"
+      }
+    },
+    "engine": {
+      "$ref": "defs.json#/$defs/Engine"
+    },
+    "extra": {
+      "$ref": "defs.json#/$defs/SemanticExtra",
+      "description": "Optional extensions (for example findingCounts). Must not replace or redefine score."
+    }
+  },
+  "examples": [
+    {
+      "score": 95,
+      "raw": "warn[operation-operationId]: Operation is missing operationId.\n  /paths/~1pets/get 12:7\n",
+      "findings": [
+        {
+          "ruleId": "operation-operationId",
+          "severity": "warn",
+          "message": "Operation is missing operationId.",
+          "pointer": "/paths/~1pets/get",
+          "range": {
+            "start": {
+              "line": 12,
+              "column": 7
+            },
+            "end": {
+              "line": 12,
+              "column": 10
+            }
+          },
+          "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "engine": {
+        "name": "vacuum",
+        "version": "v0.41.0"
+      },
+      "extra": {
+        "findingCounts": {
+          "error": 0,
+          "warn": 1,
+          "info": 0,
+          "hint": 0
+        }
+      }
+    }
+  ]
+}

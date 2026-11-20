@@ -30,7 +30,7 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.PluginID != "openapi-lint@v1" {
+	if result.PluginID != "openapi-lint@v2" {
 		t.Fatalf("plugin id=%q", result.PluginID)
 	}
 	if result.Output.Score < 0 || result.Output.Score > 100 {
