@@ -182,7 +182,18 @@ func Run(exec *motor.RuleSetExecution) contract.LintOutput {
 			fs = append(fs, f)
 		}
 	}
-	return Output(fs, &eng)
+	out := Output(fs, &eng)
+	if len(result.IgnoredResults) > 0 {
+		ignored := make([]contract.Finding, 0, len(result.IgnoredResults))
+		for i := range result.IgnoredResults {
+			if f, ok := toFinding(&result.IgnoredResults[i]); ok {
+				ignored = append(ignored, f)
+			}
+		}
+		findings.Sort(ignored)
+		out.IgnoredFindings = ignored
+	}
+	return out
 }
 
 // Failure returns the output for a document that could not be linted at

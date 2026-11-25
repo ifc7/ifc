@@ -154,3 +154,35 @@ func TestLintWrongType(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestLintReportsInlineIgnoresSeparately(t *testing.T) {
+	raw := []byte(`openapi: "3.0.3"
+info:
+  title: Pets
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      x-lint-ignore: operation-operationId
+      responses:
+        "200":
+          description: ok
+`)
+	out := lintWith(t, raw, "")
+	if slices.Contains(ruleIDs(out), "operation-operationId") {
+		t.Fatalf("ignored rule should not be in findings: %v", ruleIDs(out))
+	}
+	var ignored []string
+	for _, f := range out.IgnoredFindings {
+		ignored = append(ignored, f.RuleID)
+		if f.Pointer != "/paths/~1pets/get" || len(f.Fingerprint) != 64 {
+			t.Fatalf("incomplete ignored finding %+v", f)
+		}
+	}
+	if !slices.Contains(ignored, "operation-operationId") {
+		t.Fatalf("ignoredFindings = %v, want operation-operationId", ignored)
+	}
+	if out.Score != findings.Score(out.Findings, nil) {
+		t.Fatal("ignored findings must not affect the plugin score")
+	}
+}

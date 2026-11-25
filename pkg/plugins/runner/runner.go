@@ -2,6 +2,8 @@
 package runner
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
@@ -78,4 +80,72 @@ func (r *Registry) Compare(input contract.CompareInput) (contract.CompareOutput,
 		return contract.CompareOutput{}, cmp.ID(), err
 	}
 	return out, cmp.ID(), nil
+}
+
+// ErrBudgetExceeded is returned (wrapped) when a plugin does not finish
+// within the caller's context deadline.
+var ErrBudgetExceeded = errors.New("analysis time budget exceeded")
+
+// LintContext is Lint with an overall time budget: it returns
+// ErrBudgetExceeded as soon as ctx is done. The plugin itself cannot be
+// interrupted; it keeps running in the background until it finishes, bounded
+// by the engine's per-rule timeouts, and its result is discarded.
+func (r *Registry) LintContext(ctx context.Context, input contract.LintInput) (contract.LintOutput, string, error) {
+	type result struct {
+		out contract.LintOutput
+		id  string
+		err error
+	}
+	id := ""
+	if l, ok := r.linters[input.InterfaceType]; ok {
+		id = l.ID()
+	}
+	if err := ctx.Err(); err != nil {
+		return contract.LintOutput{}, id, budgetErr(err)
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, id, err := r.Lint(input)
+		done <- result{out, id, err}
+	}()
+	select {
+	case res := <-done:
+		return res.out, res.id, res.err
+	case <-ctx.Done():
+		return contract.LintOutput{}, id, budgetErr(ctx.Err())
+	}
+}
+
+// CompareContext is Compare with an overall time budget, like LintContext.
+func (r *Registry) CompareContext(ctx context.Context, input contract.CompareInput) (contract.CompareOutput, string, error) {
+	type result struct {
+		out contract.CompareOutput
+		id  string
+		err error
+	}
+	id := ""
+	if c, ok := r.comparators[input.InterfaceType]; ok {
+		id = c.ID()
+	}
+	if err := ctx.Err(); err != nil {
+		return contract.CompareOutput{}, id, budgetErr(err)
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, id, err := r.Compare(input)
+		done <- result{out, id, err}
+	}()
+	select {
+	case res := <-done:
+		return res.out, res.id, res.err
+	case <-ctx.Done():
+		return contract.CompareOutput{}, id, budgetErr(ctx.Err())
+	}
+}
+
+func budgetErr(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", ErrBudgetExceeded, err)
+	}
+	return err
 }
