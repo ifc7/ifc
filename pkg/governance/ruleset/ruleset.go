@@ -333,6 +333,52 @@ func mergeRule(parent, child any) any {
 	return child
 }
 
+// layerRef names the base document inside Overlay. It is not a built-in and
+// cannot be resolved from outside Overlay.
+const layerRef = "ifc7:internal/overlay-base"
+
+// Overlay layers top over base with plain extends semantics, as if top's
+// extends list started with base: base's built-ins, rules and aliases come
+// first, then top's, so top may override anything in base (including turning
+// off base's built-ins). base is resolved through r first; top's own
+// non-built-in extends are resolved through r too. A nil top returns base
+// resolved; a nil base means Default.
+func Overlay(ctx context.Context, base, top *Document, r Resolver) (*Document, error) {
+	if r == nil {
+		r = BuiltinsOnly
+	}
+	if base == nil {
+		base = Default()
+	}
+	resolvedBase, err := Resolve(ctx, base, r)
+	if err != nil {
+		return nil, err
+	}
+	if top == nil {
+		return resolvedBase, nil
+	}
+	baseBytes, _, err := Canonical(resolvedBase)
+	if err != nil {
+		return nil, err
+	}
+	tree := deepCopy(top.tree).(map[string]any)
+	ext := []any{layerRef}
+	for _, e := range top.Extends() {
+		if e.Name == layerRef {
+			return nil, fmt.Errorf("%w: extends %q is reserved", ErrInvalid, layerRef)
+		}
+		ext = append(ext, []any{e.Name, e.Mode})
+	}
+	tree["extends"] = ext
+	layered := ResolverFunc(func(ctx context.Context, ref string) ([]byte, error) {
+		if ref == layerRef {
+			return baseBytes, nil
+		}
+		return r.Resolve(ctx, ref)
+	})
+	return resolve(ctx, &Document{tree: tree}, layered, nil)
+}
+
 // Canonical returns stable bytes for doc (JSON with sorted keys, no HTML
 // escaping, no insignificant whitespace) and their lowercase hex sha256.
 func Canonical(doc *Document) ([]byte, string, error) {

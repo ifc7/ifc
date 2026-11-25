@@ -2,9 +2,9 @@
 // matching the published JSON Schema contracts at
 // https://ifc7.dev/schemas/plugins/v0/ and https://ifc7.dev/schemas/plugins/v1/.
 //
-// v1 is a superset of v0: it adds LintInput.Ruleset and LintOutput.Findings
-// and LintOutput.Engine. A v0 consumer that ignores those fields keeps
-// working.
+// v1 is a superset of v0: it adds LintInput.Ruleset, LintOutput.Findings,
+// LintOutput.IgnoredFindings and LintOutput.Engine. A v0 consumer that
+// ignores those fields keeps working.
 package contract
 
 import (
@@ -115,6 +115,11 @@ type LintOutput struct {
 	Raw string `json:"raw"`
 	// Findings are the structured lint results (v1).
 	Findings []Finding `json:"findings,omitempty"`
+	// IgnoredFindings are results the document suppressed with an inline
+	// x-lint-ignore (v1). They are not in Findings and do not affect Score;
+	// a governance policy decides whether they count (see
+	// pkg/governance/policy).
+	IgnoredFindings []Finding `json:"ignoredFindings,omitempty"`
 	// Engine names the lint engine that produced the findings (v1).
 	Engine *Engine        `json:"engine,omitempty"`
 	Extra  map[string]any `json:"extra,omitempty"`

@@ -25,6 +25,13 @@
         "$ref": "defs.json#/$defs/Finding"
       }
     },
+    "ignoredFindings": {
+      "type": "array",
+      "description": "Findings suppressed by an inline x-lint-ignore in the document. They are not part of findings and do not affect score; governance policy decides whether they count.",
+      "items": {
+        "$ref": "defs.json#/$defs/Finding"
+      }
+    },
     "engine": {
       "$ref": "defs.json#/$defs/Engine"
     },

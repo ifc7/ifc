@@ -183,3 +183,61 @@ func TestResolveRulesOnly(t *testing.T) {
 		t.Fatalf("effective = %+v", eff.Map())
 	}
 }
+
+func TestOverlay(t *testing.T) {
+	ctx := context.Background()
+	base := ruleset.MustParse([]byte("extends: spectral:oas\nrules:\n  oas3-api-servers: off\n  operation-tags: error\n"))
+
+	t.Run("nil top is base resolved", func(t *testing.T) {
+		got, err := ruleset.Overlay(ctx, base, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, _ := ruleset.Resolve(ctx, base, nil)
+		_, gs, _ := ruleset.Canonical(got)
+		_, ws, _ := ruleset.Canonical(want)
+		if gs != ws {
+			t.Fatal("nil top should equal resolved base")
+		}
+	})
+
+	t.Run("top overrides base", func(t *testing.T) {
+		top := ruleset.MustParse([]byte("rules:\n  oas3-api-servers: warn\n"))
+		got, err := ruleset.Overlay(ctx, base, top, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := got.Rules()
+		if r["oas3-api-servers"] != "warn" || r["operation-tags"] != "error" {
+			t.Fatalf("rules = %v", r)
+		}
+		if fmt.Sprint(got.Extends()) != "[{spectral:oas recommended}]" {
+			t.Fatalf("extends = %v", got.Extends())
+		}
+	})
+
+	t.Run("top built-in extends come after base", func(t *testing.T) {
+		top := ruleset.MustParse([]byte("extends: [[spectral:oas, all]]\n"))
+		got, err := ruleset.Overlay(ctx, base, top, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprint(got.Extends()) != "[{spectral:oas all}]" {
+			t.Fatalf("extends = %v", got.Extends())
+		}
+	})
+
+	t.Run("reserved name", func(t *testing.T) {
+		top := ruleset.MustParse([]byte("extends: ifc7:internal/overlay-base\n"))
+		if _, err := ruleset.Overlay(ctx, base, top, nil); !errors.Is(err, ruleset.ErrInvalid) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("top cannot resolve unknown rulesets", func(t *testing.T) {
+		top := ruleset.MustParse([]byte("extends: acme/strict\n"))
+		if _, err := ruleset.Overlay(ctx, base, top, nil); !errors.Is(err, ruleset.ErrUnresolved) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
