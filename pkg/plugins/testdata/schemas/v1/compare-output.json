@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v1/compare-output.json",
+  "title": "Compare plugin output",
+  "description": "Output contract for interface change-detector plugins (v1). breaking and raw stay required; changes are the structured change records. breaking is true exactly when a change is breaking.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "breaking",
+    "raw"
+  ],
+  "properties": {
+    "breaking": {
+      "type": "boolean",
+      "description": "True if the after document introduces one or more breaking changes relative to before."
+    },
+    "raw": {
+      "$ref": "defs.json#/$defs/RawOutput"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/Change"
+      }
+    },
+    "extra": {
+      "$ref": "defs.json#/$defs/SemanticExtra",
+      "description": "Optional extensions (for example changeCounts). Must not replace or redefine breaking."
+    }
+  },
+  "examples": [
+    {
+      "breaking": true,
+      "raw": "BREAKING paths.path.removed /paths/~1pets: removed path /pets\n",
+      "changes": [
+        {
+          "kind": "paths.path.removed",
+          "pointer": "/paths/~1pets",
+          "breaking": true,
+          "level": "error",
+          "message": "removed path /pets",
+          "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "extra": {
+        "changeCounts": {
+          "breaking": 1,
+          "nonBreaking": 0
+        }
+      }
+    }
+  ]
+}

@@ -129,13 +129,15 @@ func TestOrgPolicy_Validate(t *testing.T) {
 		p       policy.OrgPolicy
 		wantErr bool
 	}{
-		"default":     {p: policy.OrgPolicy{}},
-		"full":        {p: policy.OrgPolicy{Ruleset: []byte("extends: spectral:oas\n"), Weights: findings.Weights{contract.SeverityError: 2}, Gates: []policy.Gate{{Name: "g", On: []policy.Stage{policy.StagePush}, MinScore: &ok}}, Waivers: policy.WaiverSettings{MaxExpiryDays: 90, InlineIgnores: policy.InlineIgnoresReport}}},
-		"bad ruleset": {p: policy.OrgPolicy{Ruleset: []byte("rules:\n  x: fatal\n")}, wantErr: true},
-		"bad weight":  {p: policy.OrgPolicy{Weights: findings.Weights{contract.SeverityError: -1}}, wantErr: true},
-		"bad gate":    {p: policy.OrgPolicy{Gates: []policy.Gate{{Name: "g", On: []policy.Stage{policy.StagePush}, MinScore: &bad}}}, wantErr: true},
-		"bad inline":  {p: policy.OrgPolicy{Waivers: policy.WaiverSettings{InlineIgnores: "maybe"}}, wantErr: true},
-		"bad expiry":  {p: policy.OrgPolicy{Waivers: policy.WaiverSettings{MaxExpiryDays: -1}}, wantErr: true},
+		"default":         {p: policy.OrgPolicy{}},
+		"full":            {p: policy.OrgPolicy{Ruleset: []byte("extends: spectral:oas\n"), Weights: findings.Weights{contract.SeverityError: 2}, Gates: []policy.Gate{{Name: "g", On: []policy.Stage{policy.StagePush}, MinScore: &ok}}, Waivers: policy.WaiverSettings{MaxExpiryDays: 90, InlineIgnores: policy.InlineIgnoresReport}}},
+		"bad ruleset":     {p: policy.OrgPolicy{Ruleset: []byte("rules:\n  x: fatal\n")}, wantErr: true},
+		"bad weight":      {p: policy.OrgPolicy{Weights: findings.Weights{contract.SeverityError: -1}}, wantErr: true},
+		"bad gate":        {p: policy.OrgPolicy{Gates: []policy.Gate{{Name: "g", On: []policy.Stage{policy.StagePush}, MinScore: &bad}}}, wantErr: true},
+		"bad inline":      {p: policy.OrgPolicy{Waivers: policy.WaiverSettings{InlineIgnores: "maybe"}}, wantErr: true},
+		"bad expiry":      {p: policy.OrgPolicy{Waivers: policy.WaiverSettings{MaxExpiryDays: -1}}, wantErr: true},
+		"change kinds":    {p: policy.OrgPolicy{Changes: policy.ChangeSettings{Kinds: map[string]contract.ChangeLevel{"paths.path.removed": contract.ChangeLevelWarn}}}},
+		"bad change kind": {p: policy.OrgPolicy{Changes: policy.ChangeSettings{Kinds: map[string]contract.ChangeLevel{"paths.path.removed": "fatal"}}}, wantErr: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -57,7 +57,7 @@ func TestDefaultRegistry_CompareOpenAPIBreaking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "openapi-compare@v0" {
+	if id != "openapi-compare@v1" {
 		t.Fatalf("plugin id = %q", id)
 	}
 	if !out.Breaking {

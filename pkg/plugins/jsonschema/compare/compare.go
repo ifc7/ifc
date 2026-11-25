@@ -4,14 +4,15 @@ package compare
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ifc7/ifc/pkg/governance/changes"
+	"github.com/ifc7/ifc/pkg/governance/findings"
 	"github.com/ifc7/ifc/pkg/plugins/contract"
 )
 
-const pluginID = "jsonschema-compare@v0"
+const pluginID = "jsonschema-compare@v1"
 
 // Plugin is the default JSON Schema change detector.
 type Plugin struct{}
@@ -42,29 +43,27 @@ func (Plugin) Compare(input contract.CompareInput) (contract.CompareOutput, erro
 		return contract.CompareOutput{}, fmt.Errorf("parse after: %w", err)
 	}
 
-	var lines []string
-	breakingCount := 0
-	nonBreakingCount := 0
+	var cs []contract.Change
+	add := func(kind, pointer string, breaking bool, msg string) {
+		cs = append(cs, changes.New(kind, pointer, breaking, msg))
+	}
 
 	beforeType, _ := before["type"].(string)
 	afterType, _ := after["type"].(string)
 	if beforeType != "" && afterType != "" && beforeType != afterType {
-		breakingCount++
-		lines = append(lines, fmt.Sprintf("BREAKING: type changed from %q to %q", beforeType, afterType))
+		add("schema.type.modified", "/type", true, fmt.Sprintf("changed type from %q to %q", beforeType, afterType))
 	}
 
 	beforeRequired := stringSet(asStringSlice(before["required"]))
 	afterRequired := stringSet(asStringSlice(after["required"]))
 	for name := range afterRequired {
 		if !beforeRequired[name] {
-			breakingCount++
-			lines = append(lines, fmt.Sprintf("BREAKING: added required property %q", name))
+			add("schema.required.added", "/required/"+findings.EscapePointerToken(name), true, fmt.Sprintf("added required property %q", name))
 		}
 	}
 	for name := range beforeRequired {
 		if !afterRequired[name] {
-			nonBreakingCount++
-			lines = append(lines, fmt.Sprintf("NON-BREAKING: removed required constraint on %q", name))
+			add("schema.required.removed", "/required/"+findings.EscapePointerToken(name), false, fmt.Sprintf("removed required constraint on %q", name))
 		}
 	}
 
@@ -72,29 +71,28 @@ func (Plugin) Compare(input contract.CompareInput) (contract.CompareOutput, erro
 	afterProps := asObjectMap(after["properties"])
 	for name := range beforeProps {
 		if _, ok := afterProps[name]; !ok {
-			breakingCount++
-			lines = append(lines, fmt.Sprintf("BREAKING: removed property %q", name))
+			add("schema.properties.removed", "/properties/"+findings.EscapePointerToken(name), true, fmt.Sprintf("removed property %q", name))
 		}
 	}
 	for name := range afterProps {
 		if _, ok := beforeProps[name]; !ok {
-			nonBreakingCount++
-			lines = append(lines, fmt.Sprintf("NON-BREAKING: added property %q", name))
+			add("schema.properties.added", "/properties/"+findings.EscapePointerToken(name), false, fmt.Sprintf("added property %q", name))
 		}
 	}
-
-	rawOut := strings.Join(lines, "\n")
-	if rawOut != "" {
-		rawOut += "\n"
+	if cs == nil {
+		cs = []contract.Change{}
 	}
+	changes.Sort(cs)
+	breaking, nonBreaking := changes.Counts(cs)
 
 	return contract.CompareOutput{
-		Breaking: breakingCount > 0,
-		Raw:      rawOut,
+		Breaking: breaking > 0,
+		Raw:      changes.RenderText(cs),
+		Changes:  cs,
 		Extra: map[string]any{
 			"changeCounts": map[string]int{
-				"breaking":    breakingCount,
-				"nonBreaking": nonBreakingCount,
+				"breaking":    breaking,
+				"nonBreaking": nonBreaking,
 			},
 		},
 	}, nil

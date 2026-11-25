@@ -85,6 +85,8 @@ type OrgPolicy struct {
 	Gates []Gate
 	// Waivers holds the waiver and inline-ignore settings.
 	Waivers WaiverSettings
+	// Changes sets per-kind levels for structured change records.
+	Changes ChangeSettings
 }
 
 // Validate checks the ruleset (through ruleset.Effective with r), the
@@ -97,6 +99,9 @@ func (p *OrgPolicy) Validate(ctx context.Context, r ruleset.Resolver) error {
 		return fmt.Errorf("%w: %s", ErrInvalid, err.Error())
 	}
 	if err := ValidateGates(p.Gates); err != nil {
+		return err
+	}
+	if err := p.Changes.Validate(); err != nil {
 		return err
 	}
 	return p.Waivers.Validate()

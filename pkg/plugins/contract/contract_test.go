@@ -37,6 +37,34 @@ func TestCompareOutputMatchesSchema(t *testing.T) {
 	assertValid(t, schema, out)
 }
 
+func TestCompareOutputV1MatchesSchema(t *testing.T) {
+	schema := loadSchema(t, "v1/compare-output.json")
+	out := contract.CompareOutput{
+		Breaking: true,
+		Raw:      "BREAKING paths.path.removed /paths/~1pets: removed path\n",
+		Changes: []contract.Change{{
+			Kind:        "paths.path.removed",
+			Pointer:     "/paths/~1pets",
+			Breaking:    true,
+			Level:       contract.ChangeLevelError,
+			Message:     "removed path",
+			Fingerprint: strings.Repeat("a", 64),
+		}, {
+			Kind:        "pathItem.operation.removed",
+			Pointer:     "/paths/~1beta/get",
+			Level:       contract.ChangeLevelWarn,
+			Message:     "removed get",
+			Stability:   "x-stability-level: alpha",
+			Fingerprint: strings.Repeat("b", 64),
+		}},
+		Extra: map[string]any{"changeCounts": map[string]int{"breaking": 1, "nonBreaking": 1}},
+	}
+	assertValid(t, schema, out)
+	// A v1 compare output without changes is a valid v0 output.
+	out.Changes = nil
+	assertValid(t, loadSchema(t, "compare-output.json"), out)
+}
+
 func TestLintInputMatchesSchema(t *testing.T) {
 	schema := loadSchema(t, "lint-input.json")
 	in := contract.LintInput{

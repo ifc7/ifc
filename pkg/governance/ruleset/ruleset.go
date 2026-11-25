@@ -198,6 +198,11 @@ var BuiltinsOnly Resolver = ResolverFunc(func(_ context.Context, ref string) ([]
 // MaxDepth bounds extends chains.
 const MaxDepth = 16
 
+// MaxDocuments bounds how many documents one Resolve may load through the
+// Resolver, counting a document each time it is reached. It stops a wide
+// diamond of extends from multiplying work even when no chain is deep.
+const MaxDocuments = 64
+
 // Resolve flattens doc's extends chain into a single effective document
 // whose extends lists built-ins only. Non-built-in entries are loaded through
 // r (nil means BuiltinsOnly), parsed, and merged parent-first: a child's
@@ -209,18 +214,21 @@ func Resolve(ctx context.Context, doc *Document, r Resolver) (*Document, error) 
 	if r == nil {
 		r = BuiltinsOnly
 	}
-	out, err := resolve(ctx, doc, r, nil)
+	out, err := resolve(ctx, doc, r, nil, new(int))
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func resolve(ctx context.Context, doc *Document, r Resolver, stack []string) (*Document, error) {
+// resolve flattens doc. stack holds the canonical names of the documents
+// being resolved, outermost first, so a cycle is reported before any
+// document is loaded twice on one path; loaded counts every Resolver load.
+func resolve(ctx context.Context, doc *Document, r Resolver, stack []string, loaded *int) (*Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(stack) > MaxDepth {
+	if len(stack) >= MaxDepth {
 		return nil, fmt.Errorf("%w: extends chain deeper than %d", ErrInvalid, MaxDepth)
 	}
 	merged := map[string]any{}
@@ -235,12 +243,17 @@ func resolve(ctx context.Context, doc *Document, r Resolver, stack []string) (*D
 			addBuiltin(e)
 			continue
 		}
-		if slices.Contains(stack, e.Name) {
-			return nil, fmt.Errorf("%w: %v -> %s", ErrCycle, stack, e.Name)
+		name := canonicalName(e.Name)
+		if slices.Contains(stack, name) {
+			return nil, fmt.Errorf("%w: %s -> %s", ErrCycle, strings.Join(stack, " -> "), name)
 		}
 		if e.Mode != ModeRecommended {
 			return nil, fmt.Errorf("%w: extends mode %q is only supported for built-in rulesets", ErrUnsupported, e.Mode)
 		}
+		if *loaded >= MaxDocuments {
+			return nil, fmt.Errorf("%w: extends loads more than %d rulesets", ErrInvalid, MaxDocuments)
+		}
+		*loaded++
 		data, err := r.Resolve(ctx, e.Name)
 		if err != nil {
 			return nil, fmt.Errorf("extends %q: %w", e.Name, err)
@@ -249,7 +262,7 @@ func resolve(ctx context.Context, doc *Document, r Resolver, stack []string) (*D
 		if err != nil {
 			return nil, fmt.Errorf("extends %q: %w", e.Name, err)
 		}
-		parent, err := resolve(ctx, parentDoc, r, append(stack, e.Name))
+		parent, err := resolve(ctx, parentDoc, r, append(slices.Clip(stack), name), loaded)
 		if err != nil {
 			return nil, err
 		}
@@ -376,7 +389,7 @@ func Overlay(ctx context.Context, base, top *Document, r Resolver) (*Document, e
 		}
 		return r.Resolve(ctx, ref)
 	})
-	return resolve(ctx, &Document{tree: tree}, layered, nil)
+	return resolve(ctx, &Document{tree: tree}, layered, nil, new(int))
 }
 
 // Canonical returns stable bytes for doc (JSON with sorted keys, no HTML

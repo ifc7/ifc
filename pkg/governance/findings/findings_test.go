@@ -150,3 +150,15 @@ func TestSortAndRender(t *testing.T) {
 		t.Fatalf("RenderText = %q, want %q", got, want)
 	}
 }
+
+func TestNewSince(t *testing.T) {
+	t.Parallel()
+	f := func(fp string) contract.Finding { return contract.Finding{RuleID: "r", Fingerprint: fp} }
+	got := findings.NewSince([]contract.Finding{f("a"), f("b"), f("a"), f("c")}, []contract.Finding{f("a"), f("c"), f("gone")})
+	if len(got) != 2 || got[0].Fingerprint != "b" || got[1].Fingerprint != "a" {
+		t.Fatalf("NewSince = %+v", got)
+	}
+	if got := findings.NewSince([]contract.Finding{f("a")}, nil); len(got) != 1 {
+		t.Fatalf("no baseline: %+v", got)
+	}
+}

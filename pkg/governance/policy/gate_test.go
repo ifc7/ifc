@@ -1,6 +1,7 @@
 package policy_test
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -31,6 +32,10 @@ func TestValidateGates(t *testing.T) {
 		"score negative":  {gates: []policy.Gate{{Name: "g", On: push, MinScore: intp(-1)}}, wantErr: true},
 		"bad breaking":    {gates: []policy.Gate{{Name: "g", On: push, Breaking: "warn"}}, wantErr: true},
 		"duplicate names": {gates: []policy.Gate{{Name: "g", On: push}, {Name: "g", On: push}}, wantErr: true},
+		"requireMajor":    {gates: []policy.Gate{{Name: "g", On: push, Breaking: policy.BreakingRequireMajor}}},
+		"scope new":       {gates: []policy.Gate{{Name: "g", On: push, FailOn: policy.FailOnError, Scope: policy.ScopeNew}}},
+		"scope new, none": {gates: []policy.Gate{{Name: "g", On: push, Scope: policy.ScopeNew}}, wantErr: true},
+		"bad scope":       {gates: []policy.Gate{{Name: "g", On: push, FailOn: policy.FailOnError, Scope: "old"}}, wantErr: true},
 		"too many gates":  {gates: make([]policy.Gate, policy.MaxGates+1), wantErr: true},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -65,6 +70,23 @@ func TestEvaluate(t *testing.T) {
 		finding("a", "/x", contract.SeverityError),
 		finding("b", "/y", contract.SeverityWarn),
 	}, nil, []policy.Waiver{{ID: "w", RuleID: "a", Pointer: "/x"}}, "", day)
+
+	breakingChange := func(kind string) contract.Change {
+		return contract.Change{Kind: kind, Pointer: "/paths/~1a", Breaking: true, Level: contract.ChangeLevelError}
+	}
+	structured := &policy.Change{Breaking: true, Changes: []contract.Change{breakingChange("paths.path.removed")}, ComparedTo: "release 1.4.0", FromVersion: "1.4.0"}
+	withTo := func(c *policy.Change, to string) *policy.Change {
+		cp := *c
+		cp.ToVersion = to
+		return &cp
+	}
+	baseline := &policy.Baseline{Findings: []contract.Finding{finding("a", "/x", contract.SeverityError)}, From: "release 1.4.0"}
+	newErr := policy.ApplyWaivers([]contract.Finding{
+		finding("a", "/x", contract.SeverityError),
+		finding("c", "/z", contract.SeverityError),
+	}, nil, nil, "", day)
+	newOnly := policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, FailOn: policy.FailOnError, Scope: policy.ScopeNew}
+	requireMajor := policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, Breaking: policy.BreakingRequireMajor}
 
 	for name, tc := range map[string]struct {
 		gate      policy.Gate
@@ -121,6 +143,62 @@ func TestEvaluate(t *testing.T) {
 			gate: policy.Gate{Name: "g", On: both, FailOn: policy.FailOnError},
 			in:   policy.Input{Stage: policy.StagePush, Findings: errs}, wantCodes: "findings", wantStage: true,
 		},
+		"requireMajor fails a minor bump": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: withTo(structured, "1.5.0")}, wantCodes: "major_bump_required",
+		},
+		"requireMajor passes a major bump": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: withTo(structured, "2.0.0")}, wantPass: true, wantStage: true,
+		},
+		"requireMajor on 0.x needs a minor bump": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Changes: structured.Changes, FromVersion: "0.3.1", ToVersion: "0.3.2"}}, wantCodes: "major_bump_required",
+		},
+		"requireMajor on 0.x passes a minor bump": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Changes: structured.Changes, FromVersion: "0.3.1", ToVersion: "v0.4.0"}}, wantPass: true, wantStage: true,
+		},
+		"requireMajor does not judge a push": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StagePush, Change: structured}, wantPass: true, wantStage: true,
+		},
+		"requireMajor with an unparseable version fails closed": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: withTo(structured, "next")}, wantCodes: "major_bump_required",
+		},
+		"requireMajor fails closed when compare failed": {
+			gate: requireMajor,
+			in:   policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Failed: true, ToVersion: "2.0.0"}}, wantCodes: "compare_failed",
+		},
+		"change kind set to warn is not breaking": {
+			gate: policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, Breaking: policy.BreakingBlock},
+			in: policy.Input{Stage: policy.StageRelease, Change: structured, ChangeSettings: policy.ChangeSettings{
+				Kinds: map[string]contract.ChangeLevel{"paths.path.removed": contract.ChangeLevelWarn},
+			}}, wantPass: true, wantStage: true,
+		},
+		"change kind set to error is breaking": {
+			gate: policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, Breaking: policy.BreakingBlock},
+			in: policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Changes: []contract.Change{{Kind: "schema.properties.added", Level: contract.ChangeLevelWarn}}}, ChangeSettings: policy.ChangeSettings{
+				Kinds: map[string]contract.ChangeLevel{"schema.properties.added": contract.ChangeLevelError},
+			}}, wantCodes: "breaking_change",
+		},
+		"structured changes override the legacy flag": {
+			gate: policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, Breaking: policy.BreakingBlock},
+			in:   policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Breaking: true, Changes: []contract.Change{}}}, wantPass: true, wantStage: true,
+		},
+		"scope new ignores baseline findings": {
+			gate: newOnly,
+			in:   policy.Input{Stage: policy.StagePush, Findings: errs, Baseline: baseline}, wantPass: true, wantStage: true,
+		},
+		"scope new fails on a new finding": {
+			gate: newOnly,
+			in:   policy.Input{Stage: policy.StagePush, Findings: newErr, Baseline: baseline}, wantCodes: "findings",
+		},
+		"scope new without a baseline counts everything": {
+			gate: newOnly,
+			in:   policy.Input{Stage: policy.StagePush, Findings: errs}, wantCodes: "findings",
+		},
 		"several reasons": {
 			gate: policy.Gate{Name: "g", On: both, Enforcement: policy.EnforcementBlocking, FailOn: policy.FailOnError, MinScore: intp(99), Breaking: policy.BreakingBlock},
 			in:   policy.Input{Stage: policy.StageRelease, Findings: errs, Change: &policy.Change{Breaking: true}}, wantCodes: "findings,min_score,breaking_change",
@@ -144,6 +222,23 @@ func TestEvaluate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("scope new reason names the baseline", func(t *testing.T) {
+		t.Parallel()
+		o := policy.Evaluate([]policy.Gate{newOnly}, policy.Input{Stage: policy.StagePush, Findings: newErr, Baseline: baseline})
+		r := o.Gates[0].Reasons[0]
+		if r.Count != 1 || !strings.Contains(r.Message, "1 new") || !strings.Contains(r.Message, "since release 1.4.0") {
+			t.Fatalf("reason = %+v", r)
+		}
+	})
+
+	t.Run("breaking changes are counted", func(t *testing.T) {
+		t.Parallel()
+		o := policy.Evaluate(nil, policy.Input{Stage: policy.StageRelease, Change: &policy.Change{Changes: []contract.Change{breakingChange("a.b.removed"), breakingChange("c.d.removed"), {Kind: "e.f.added", Level: contract.ChangeLevelWarn}}}})
+		if o.BreakingChanges != 2 {
+			t.Fatalf("breakingChanges = %d", o.BreakingChanges)
+		}
+	})
 
 	t.Run("gates for other stages are skipped", func(t *testing.T) {
 		t.Parallel()
@@ -181,4 +276,57 @@ func TestEvaluate(t *testing.T) {
 			t.Fatalf("failed = %+v", f)
 		}
 	})
+}
+
+func TestGate_MarshalJSON(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		gate policy.Gate
+		want string
+	}{
+		"string failOn": {gate: policy.Gate{Name: "g", On: []policy.Stage{policy.StagePush}, FailOn: policy.FailOnError}, want: `{"name":"g","on":["push"],"failOn":"error"}`},
+		"scope new":     {gate: policy.Gate{Name: "g", On: []policy.Stage{policy.StagePush}, FailOn: policy.FailOnError, Scope: policy.ScopeNew}, want: `{"name":"g","on":["push"],"failOn":{"severity":"error","scope":"new"}}`},
+		"no failOn":     {gate: policy.Gate{Name: "g", On: []policy.Stage{policy.StageRelease}, Breaking: policy.BreakingRequireMajor}, want: `{"name":"g","on":["release"],"breaking":"requireMajor"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b, err := json.Marshal(tc.gate)
+			if err != nil || string(b) != tc.want {
+				t.Fatalf("Marshal = %s, %v; want %s", b, err, tc.want)
+			}
+			var back policy.Gate
+			if err := json.Unmarshal(b, &back); err != nil {
+				t.Fatal(err)
+			}
+			if back.FailOn != tc.gate.FailOn || back.Scope != tc.gate.Scope || back.Breaking != tc.gate.Breaking {
+				t.Fatalf("round trip = %+v", back)
+			}
+		})
+	}
+}
+
+func TestGate_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		in      string
+		want    policy.Gate
+		wantErr bool
+	}{
+		"object without scope": {in: `{"name":"g","on":["push"],"failOn":{"severity":"warn"}}`, want: policy.Gate{Name: "g", On: []policy.Stage{policy.StagePush}, FailOn: policy.FailOnWarn}},
+		"null failOn":          {in: `{"name":"g","on":["push"],"failOn":null}`, want: policy.Gate{Name: "g", On: []policy.Stage{policy.StagePush}}},
+		"unknown object key":   {in: `{"name":"g","on":["push"],"failOn":{"severity":"warn","since":"v1"}}`, wantErr: true},
+		"number failOn":        {in: `{"name":"g","on":["push"],"failOn":3}`, wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var g policy.Gate
+			err := json.Unmarshal([]byte(tc.in), &g)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v", err)
+			}
+			if err == nil && (g.Name != tc.want.Name || g.FailOn != tc.want.FailOn || g.Scope != tc.want.Scope || len(g.On) != len(tc.want.On)) {
+				t.Fatalf("got %+v", g)
+			}
+		})
+	}
 }
