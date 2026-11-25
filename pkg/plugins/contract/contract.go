@@ -3,8 +3,8 @@
 // https://ifc7.dev/schemas/plugins/v0/ and https://ifc7.dev/schemas/plugins/v1/.
 //
 // v1 is a superset of v0: it adds LintInput.Ruleset, LintOutput.Findings,
-// LintOutput.IgnoredFindings and LintOutput.Engine. A v0 consumer that
-// ignores those fields keeps working.
+// LintOutput.IgnoredFindings, LintOutput.Engine and CompareOutput.Changes. A
+// v0 consumer that ignores those fields keeps working.
 package contract
 
 import (
@@ -181,7 +181,46 @@ type CompareInput struct {
 
 // CompareOutput is the output contract for change-detector plugins.
 type CompareOutput struct {
-	Breaking bool           `json:"breaking"`
-	Raw      string         `json:"raw"`
-	Extra    map[string]any `json:"extra,omitempty"`
+	Breaking bool   `json:"breaking"`
+	Raw      string `json:"raw"`
+	// Changes are the structured change records (v1). Breaking is true
+	// exactly when at least one change is breaking.
+	Changes []Change       `json:"changes,omitempty"`
+	Extra   map[string]any `json:"extra,omitempty"`
+}
+
+// ChangeLevel is how much a change matters to a gate.
+type ChangeLevel string
+
+const (
+	// ChangeLevelError is a change a breaking-change gate judges: by
+	// default every breaking change.
+	ChangeLevelError ChangeLevel = "error"
+	// ChangeLevelWarn is reported but never fails a gate: by default every
+	// non-breaking change.
+	ChangeLevelWarn ChangeLevel = "warn"
+	// ChangeLevelIgnore drops the change. Plugins never emit it; a
+	// governance policy may set it per change kind.
+	ChangeLevelIgnore ChangeLevel = "ignore"
+)
+
+// Change is one structured difference between two documents.
+type Change struct {
+	// Kind classifies the change as {object}.{property}.{action}, for
+	// example "pathItem.operation.removed" or "schema.type.modified".
+	// action is added, removed or modified.
+	Kind string `json:"kind"`
+	// Pointer is a JSON Pointer to the changed location. It points into the
+	// after document, or into the before document for a removal. Array
+	// members that have a name (parameters) are addressed by that name.
+	Pointer  string `json:"pointer"`
+	Breaking bool   `json:"breaking"`
+	// Level is error for a breaking change and warn otherwise.
+	Level   ChangeLevel `json:"level"`
+	Message string      `json:"message"`
+	// Stability is set when a change that would be breaking is exempt
+	// because its operation is marked x-stability-level (draft or alpha).
+	Stability string `json:"stability,omitempty"`
+	// Fingerprint identifies the change by kind and pointer.
+	Fingerprint string `json:"fingerprint"`
 }

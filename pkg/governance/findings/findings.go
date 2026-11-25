@@ -178,3 +178,23 @@ func RenderText(fs []contract.Finding) string {
 	}
 	return b.String()
 }
+
+// NewSince returns the findings in current that are not in baseline,
+// matched by fingerprint. Matching counts occurrences, so if baseline has a
+// fingerprint once and current has it twice, one of the two is new. Order
+// follows current.
+func NewSince(current, baseline []contract.Finding) []contract.Finding {
+	seen := make(map[string]int, len(baseline))
+	for _, f := range baseline {
+		seen[f.Fingerprint]++
+	}
+	out := make([]contract.Finding, 0, len(current))
+	for _, f := range current {
+		if seen[f.Fingerprint] > 0 {
+			seen[f.Fingerprint]--
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}

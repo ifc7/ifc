@@ -3,15 +3,14 @@ package compare
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/pb33f/libopenapi"
-	"github.com/pb33f/libopenapi/what-changed/reports"
 
+	"github.com/ifc7/ifc/pkg/governance/changes"
 	"github.com/ifc7/ifc/pkg/plugins/contract"
 )
 
-const pluginID = "openapi-compare@v0"
+const pluginID = "openapi-compare@v1"
 
 // Plugin is the default OpenAPI change detector.
 type Plugin struct{}
@@ -42,47 +41,34 @@ func (Plugin) Compare(input contract.CompareInput) (contract.CompareOutput, erro
 		return contract.CompareOutput{}, fmt.Errorf("parse after document: %w", err)
 	}
 
-	changes, err := libopenapi.CompareDocuments(beforeDoc, afterDoc)
+	diff, err := libopenapi.CompareDocuments(beforeDoc, afterDoc)
 	if err != nil {
 		return contract.CompareOutput{}, fmt.Errorf("compare documents: %w", err)
 	}
-	if changes == nil {
-		return contract.CompareOutput{
-			Breaking: false,
-			Raw:      "",
-			Extra: map[string]any{
-				"changeCounts": map[string]int{"breaking": 0, "nonBreaking": 0},
-			},
-		}, nil
+	var cs []contract.Change
+	if diff != nil {
+		cs = collectChanges(diff, parseTree(beforeBytes), parseTree(afterBytes))
 	}
+	return output(cs), nil
+}
 
-	breakingCount := changes.TotalBreakingChanges()
-	totalCount := changes.TotalChanges()
-	nonBreaking := totalCount - breakingCount
-	if nonBreaking < 0 {
-		nonBreaking = 0
+// output builds the compare output from structured changes. Breaking and
+// the counts come from the changes, after x-stability-level exemptions.
+func output(cs []contract.Change) contract.CompareOutput {
+	if cs == nil {
+		cs = []contract.Change{}
 	}
-
-	var b strings.Builder
-	report := reports.CreateOverallReport(changes)
-	if report != nil {
-		for label, ch := range report.ChangeReport {
-			if ch == nil || ch.Total == 0 {
-				continue
-			}
-			fmt.Fprintf(&b, "%s: %d change(s) (%d breaking)\n", label, ch.Total, ch.Breaking)
-		}
+	breaking, nonBreaking := changes.Counts(cs)
+	raw := changes.RenderText(cs)
+	if len(cs) > 0 {
+		raw += fmt.Sprintf("total: %d change(s), %d breaking\n", len(cs), breaking)
 	}
-	fmt.Fprintf(&b, "total: %d change(s), %d breaking\n", totalCount, breakingCount)
-
 	return contract.CompareOutput{
-		Breaking: breakingCount > 0,
-		Raw:      b.String(),
+		Breaking: breaking > 0,
+		Raw:      raw,
+		Changes:  cs,
 		Extra: map[string]any{
-			"changeCounts": map[string]int{
-				"breaking":    breakingCount,
-				"nonBreaking": nonBreaking,
-			},
+			"changeCounts": map[string]int{"breaking": breaking, "nonBreaking": nonBreaking},
 		},
-	}, nil
+	}
 }

@@ -192,6 +192,55 @@
           "version": "v0.41.0"
         }
       ]
+    },
+    "ChangeLevel": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warn"
+      ],
+      "description": "error for a change a breaking-change gate judges (every breaking change by default), warn otherwise."
+    },
+    "Change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "pointer",
+        "breaking",
+        "level",
+        "message",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z]+\\.[A-Za-z0-9$*-]+\\.(added|removed|modified)$",
+          "description": "{object}.{property}.{action}, for example pathItem.operation.removed."
+        },
+        "pointer": {
+          "type": "string",
+          "description": "JSON Pointer to the changed location, in the after document (the before document for a removal)."
+        },
+        "breaking": {
+          "type": "boolean"
+        },
+        "level": {
+          "$ref": "#/$defs/ChangeLevel"
+        },
+        "message": {
+          "type": "string"
+        },
+        "stability": {
+          "type": "string",
+          "description": "Set when a change that would be breaking is exempt because its operation is marked x-stability-level draft or alpha."
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of kind and pointer."
+        }
+      }
     }
   }
 }
