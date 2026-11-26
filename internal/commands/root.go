@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -37,8 +38,26 @@ func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, ui.Apply(ui.Error, fmt.Sprintf("Error: %v", err)))
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// ExitError is an error with its own exit status.
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+func (e *ExitError) Error() string { return e.Err.Error() }
+func (e *ExitError) Unwrap() error { return e.Err }
+
+// exitCode is the exit status for err: an ExitError's code, otherwise 1.
+func exitCode(err error) int {
+	var ee *ExitError
+	if errors.As(err, &ee) && ee.Code != 0 {
+		return ee.Code
+	}
+	return 1
 }
 
 func init() {

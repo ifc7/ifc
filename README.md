@@ -78,7 +78,7 @@ Use `ifc --help` for detailed explanations of commands.
 
 `ifc checkout [name|slug]...` - Update owned interface files on disk from the latest revision in the local manifest (use after `ifc fetch`; `--force` overwrites local edits).
 
-`ifc lint [name|path]...` - Lint owned interfaces or specification files with the default linter plugin.
+`ifc lint [name|path]...` - Lint owned interfaces or specification files and print their quality score. Add `--hub` to lint with the interface's governance policy on the hub, `--gate push|release` to also check the hub's gates, or `--ruleset <file>` to lint with a local ruleset. See [Governance](#governance).
 
 `ifc compare <before> <after>` - Compare two specifications for breaking changes with the default change-detector plugin.
 
@@ -98,6 +98,33 @@ ifc push --non-interactive --json > result.json
 - `.ifc/` can stay gitignored: a missing manifest is treated as empty.
 - `--non-interactive` is implied when `CI=true` or stdin is not a terminal. Owned interfaces without a `ref` are skipped with a warning; run `ifc push` interactively once to create them.
 - `ifc push --json` prints one report to stdout listing each owned interface with `status` `pushed`, `up_to_date`, `skipped`, `failed` or `not_attempted`. Messages go to stderr.
+
+## Governance
+
+`ifc lint` can reach the same pass or fail as the hub before you push:
+
+```bash
+ifc lint --gate push                           # every owned interface, against the hub's push gates
+ifc lint rest-api --gate release --release-version 2.0.0
+ifc lint --hub                                 # the hub's ruleset, weights and waivers, no gates
+ifc lint api/v0.yaml --ruleset openlint.yaml --fail-on error
+ifc lint api/v0.yaml --baseline old.yaml --breaking block --fail-on warn --new-only
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--hub` | Lint with each interface's effective policy: the organization, group and interface ruleset layers, score weights, inline-ignore setting, change-scoped rules and active waivers. Needs an owned interface with a `ref`, and a login or `IFC_TOKEN`. |
+| `--gate push\|release` | Like `--hub`, and evaluate the gates the hub runs at that stage. |
+| `--release-version <v>` | The version being released. Required with `--gate release`, for `breaking: requireMajor`. |
+| `--ruleset <file>` | Lint with a local OpenLint ruleset. ifc7 ruleset references in `extends` (`https://ifc7.dev/r/{owner}/{slug}/v{n}`) are fetched from the hub without credentials, so only public rulesets resolve. Not with `--hub` or `--gate`. |
+| `--baseline <file>\|none` | What breaking-change gates, `scope: new` gates and change-scoped rules (`x-ifc-scope: changed`) compare against. With `--hub` or `--gate` it defaults to the release the hub would use (the latest one, or for `--gate release` the highest one below `--release-version`), and to nothing otherwise. `--baseline-version` gives a file's version. |
+| `--fail-on <severity>`, `--min-score <n>`, `--breaking block\|requireMajor`, `--new-only` | Add one blocking gate named `cli`, with or without a hub policy. `--new-only` counts only findings not in the baseline. |
+| `--strict` | Fail on advisory gates too. |
+| `--json` | Print one report to stdout: `passed`, and per interface the policy, baseline, score, findings with their status (`open`, `waived`, `ignored`, `ignored-counted`), out-of-scope findings, changes and the gate outcome. |
+
+`ifc lint` exits with 0 when every interface was linted and no blocking gate failed, 2 when a gate blocked, and 1 for any other error. Without gates, a low score never fails it.
+
+The check itself is `pkg/governance/check`, the same lint, compare, scope, waiver and gate steps the hub runs on a push. Like the hub, `--gate push` compares with the latest release and `--gate release` with the highest release below `--release-version`. One difference remains: for a `scope: new` gate the hub lints the baseline release with the changes recorded when it was pushed, which the CLI doesn't have, so change-scoped rules apply to the whole baseline document. That can only make the CLI count fewer findings as new when a policy has change-scoped rules.
 
 ## Coming Soon:
 
