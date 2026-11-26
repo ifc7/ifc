@@ -36,15 +36,29 @@ type fakeHub struct {
 	rejectAll  bool            // every request returns 401
 	requested  []string        // "METHOD path" of every request
 	nextID     int
+	// policies are the effective policies by interface id; an interface without one gets 404.
+	policies map[string]*client.EffectivePolicy
+	// policyStatus overrides the effective-policy status by interface id.
+	policyStatus map[string]int
+	// rulesets are public ruleset documents by locator path (/r/{owner}/{slug}/v{n}),
+	// served without authentication.
+	rulesets map[string]string
 }
 
 type fakeInterface struct {
 	ifc       client.Interface
 	revisions []client.InterfaceRevision
+	releases  []client.InterfaceRelease
 }
 
 func newFakeHub() *fakeHub {
-	return &fakeHub{interfaces: map[string]*fakeInterface{}, forbidPush: map[string]bool{}}
+	return &fakeHub{
+		interfaces:   map[string]*fakeInterface{},
+		forbidPush:   map[string]bool{},
+		policies:     map[string]*client.EffectivePolicy{},
+		policyStatus: map[string]int{},
+		rulesets:     map[string]string{},
+	}
 }
 
 // addInterface registers interface-7/<slug> with one server revision per spec.
@@ -92,6 +106,21 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.requested = append(h.requested, r.Method+" "+r.URL.Path)
+	if strings.HasPrefix(r.URL.Path, "/r/") && r.Method == http.MethodGet {
+		// The ruleset locator is public and the CLI sends it no credentials.
+		if r.Header.Get("Authorization") != "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": "credentials sent to the ruleset locator"})
+			return
+		}
+		doc, ok := h.rulesets[r.URL.Path]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write([]byte(doc))
+		return
+	}
 	if h.rejectAll || r.Header.Get("Authorization") != "Bearer "+testToken {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
 		return
@@ -124,8 +153,23 @@ func (h *fakeHub) serveInterface(w http.ResponseWriter, r *http.Request, fi *fak
 	switch {
 	case len(rest) == 0 && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, fi.ifc)
+	case len(rest) == 2 && rest[0] == "governance" && rest[1] == "effective-policy" && r.Method == http.MethodGet:
+		if status := h.policyStatus[fi.ifc.Id]; status != 0 {
+			writeJSON(w, status, map[string]string{"message": "denied"})
+			return
+		}
+		pol, ok := h.policies[fi.ifc.Id]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, pol)
 	case len(rest) == 1 && rest[0] == "releases":
-		writeJSON(w, http.StatusOK, []client.InterfaceRelease{})
+		rels := fi.releases
+		if rels == nil {
+			rels = []client.InterfaceRelease{}
+		}
+		writeJSON(w, http.StatusOK, rels)
 	case len(rest) == 1 && rest[0] == "revisions" && r.Method == http.MethodGet:
 		descs := []client.InterfaceRevisionDescriptor{}
 		for _, rev := range fi.revisions {

@@ -336,6 +336,27 @@ func (mr *MockClientWithResponsesIfcMockRecorder) GetCurrentUserWithResponse(ctx
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentUserWithResponse", reflect.TypeOf((*MockClientWithResponsesIfc)(nil).GetCurrentUserWithResponse), varargs...)
 }
 
+// GetEffectivePolicyWithResponse mocks base method.
+func (m *MockClientWithResponsesIfc) GetEffectivePolicyWithResponse(ctx context.Context, interfaceID InterfaceId, reqEditors ...RequestEditorFn) (*EffectivePolicy, int, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, interfaceID}
+	for _, a := range reqEditors {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetEffectivePolicyWithResponse", varargs...)
+	ret0, _ := ret[0].(*EffectivePolicy)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetEffectivePolicyWithResponse indicates an expected call of GetEffectivePolicyWithResponse.
+func (mr *MockClientWithResponsesIfcMockRecorder) GetEffectivePolicyWithResponse(ctx, interfaceID any, reqEditors ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, interfaceID}, reqEditors...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEffectivePolicyWithResponse", reflect.TypeOf((*MockClientWithResponsesIfc)(nil).GetEffectivePolicyWithResponse), varargs...)
+}
+
 // GetInterfaceByCanonicalPathWithResponse mocks base method.
 func (m *MockClientWithResponsesIfc) GetInterfaceByCanonicalPathWithResponse(ctx context.Context, host, ownerPath, name string, reqEditors ...RequestEditorFn) (*CanonicalInterfaceMeta, int, error) {
 	m.ctrl.T.Helper()

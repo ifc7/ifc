@@ -40,5 +40,6 @@ type ClientWithResponsesIfc interface {
 	GetUserWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*GetUserResponse, error)
 	UpdateUserWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
 	UpdateUserWithResponse(ctx context.Context, userId UserId, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
+	GetEffectivePolicyWithResponse(ctx context.Context, interfaceID InterfaceId, reqEditors ...RequestEditorFn) (*EffectivePolicy, int, error)
 	CurrentUserID(ctx context.Context) (UserId, error)
 }
