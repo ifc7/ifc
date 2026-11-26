@@ -107,6 +107,9 @@ func Parse(data []byte) (*Document, error) {
 			return nil, fmt.Errorf("%w: %s (%q) is not supported yet", ErrUnsupported, unsupportedKeys[k], k)
 		}
 	}
+	if err := validateScope(tree); err != nil {
+		return nil, err
+	}
 	doc := &Document{tree: tree}
 	for _, e := range doc.Extends() {
 		switch e.Mode {
@@ -306,6 +309,8 @@ func mergeInto(dst, src map[string]any) {
 				dr[name] = mergeRule(dr[name], deepCopy(rv))
 			}
 			dst["rules"] = dr
+		case ScopeKey:
+			mergeScope(dst, v)
 		case "aliases":
 			da, _ := dst["aliases"].(map[string]any)
 			if da == nil {

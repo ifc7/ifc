@@ -87,6 +87,8 @@ type OrgPolicy struct {
 	Waivers WaiverSettings
 	// Changes sets per-kind levels for structured change records.
 	Changes ChangeSettings
+	// Guardrails limit what group and interface layers may override.
+	Guardrails Guardrails
 }
 
 // Validate checks the ruleset (through ruleset.Effective with r), the
@@ -102,6 +104,9 @@ func (p *OrgPolicy) Validate(ctx context.Context, r ruleset.Resolver) error {
 		return err
 	}
 	if err := p.Changes.Validate(); err != nil {
+		return err
+	}
+	if err := p.Guardrails.Validate(); err != nil {
 		return err
 	}
 	return p.Waivers.Validate()
@@ -134,28 +139,10 @@ type Effective struct {
 // ruleset (empty means the built-in default), with the interface's fragment
 // on top using plain extends semantics, so the interface may override any
 // organization rule. A nil or empty interface layer gives exactly the
-// organization's effective ruleset (same bytes and sha256).
+// organization's effective ruleset (same bytes and sha256). MergeLayers
+// generalises it to any number of layers and enforces guardrails.
 func Merge(ctx context.Context, org []byte, iface []byte, r ruleset.Resolver) (*Effective, error) {
-	base := ruleset.Default()
-	if len(strings.TrimSpace(string(org))) > 0 {
-		var err error
-		if base, err = ruleset.Parse(org); err != nil {
-			return nil, fmt.Errorf("organization ruleset: %w", err)
-		}
-	}
-	top, err := ParseInterfaceRuleset(iface)
-	if err != nil {
-		return nil, fmt.Errorf("interface ruleset: %w", err)
-	}
-	doc, err := ruleset.Overlay(ctx, base, top, r)
-	if err != nil {
-		return nil, err
-	}
-	b, sum, err := ruleset.Canonical(doc)
-	if err != nil {
-		return nil, err
-	}
-	return &Effective{Document: doc, Bytes: b, SHA256: sum}, nil
+	return MergeLayers(ctx, org, []Layer{{Name: "interface", Ruleset: iface}}, Guardrails{}, r)
 }
 
 func validStage(s Stage) bool { return slices.Contains(Stages, s) }
