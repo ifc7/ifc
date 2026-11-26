@@ -2,8 +2,11 @@ package spec_test
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ifc7/ifc/pkg/plugins/contract"
@@ -76,5 +79,34 @@ func TestValidate(t *testing.T) {
 func TestDetectFileFormat(t *testing.T) {
 	if spec.DetectFileFormat([]byte(`{"a":1}`)) != contract.FileFormatJSON || spec.DetectFileFormat([]byte("a: 1\n")) != contract.FileFormatYAML {
 		t.Fatal("wrong format")
+	}
+}
+
+func TestValidateJSONSchemaNeverFetches(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte(`{"type":"string"}`))
+	}))
+	defer srv.Close()
+	for _, ref := range []string{srv.URL + "/s.json", "file:///etc/hostname"} {
+		doc := []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"a":{"$ref":"` + ref + `"}}}`)
+		err := spec.ValidateJSONSchema(doc)
+		if !errors.Is(err, spec.ErrExternalReference) || !errors.Is(err, spec.ErrInvalidSpecification) {
+			t.Fatalf("%s: err = %v, want spec.ErrExternalReference", ref, err)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("fetched %d times", hits.Load())
+	}
+	// Local references and the standard meta-schemas still work.
+	for _, doc := range []string{
+		`{"$schema":"https://json-schema.org/draft/2020-12/schema","$defs":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/$defs/s"}}}`,
+		`{"$schema":"http://json-schema.org/draft-07/schema#","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s"}}}`,
+		`{"$id":"https://example.com/root.json","$defs":{"s":{"$id":"https://example.com/s.json","type":"string"}},"properties":{"a":{"$ref":"https://example.com/s.json"}}}`,
+	} {
+		if err := spec.ValidateJSONSchema([]byte(doc)); err != nil {
+			t.Errorf("%s: %v", doc, err)
+		}
 	}
 }

@@ -1,0 +1,12 @@
+{
+  "info": {"_postman_id": "1", "name": "Pets", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "item": [
+    {"name": "Pets", "item": [
+      {"id": "a", "name": "List", "request": {"method": "GET", "url": {"raw": "{{baseUrl}}/pets", "host": ["{{baseUrl}}"], "path": ["pets"]}}},
+      {"id": "b", "name": "Get", "request": {"method": "GET", "url": "{{baseUrl}}/pets/:petId"}},
+      {"id": "c", "name": "Create", "request": {"method": "POST", "url": "https://api.example.com/v1/pets", "body": {"mode": "raw", "raw": "{}"}}}
+    ]},
+    {"id": "d", "name": "Simple", "request": "{{baseUrl}}/pets/{{petId}}"}
+  ],
+  "variable": [{"key": "baseUrl", "value": "https://api.example.com/v1"}]
+}

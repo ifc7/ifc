@@ -1,0 +1,8 @@
+opencollection: 1.0.0
+info:
+  name: Pets
+items:
+  - info: {name: List pets, type: http}
+    http: {method: GET, url: '{{baseUrl}}/pets'}
+  - info: {name: Get pet, type: http}
+    http: {method: GET, url: '{{baseUrl}}/pets/{{petId}}'}

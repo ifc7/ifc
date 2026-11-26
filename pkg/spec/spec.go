@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/kaptinlin/jsonschema"
 	"github.com/pb33f/libopenapi"
@@ -101,10 +102,28 @@ func ValidateJSONSchema(raw []byte) error {
 	if err != nil {
 		return &ValidationError{Type: contract.InterfaceTypeJSONSchema, Err: err}
 	}
-	if _, err := jsonschema.NewCompiler().Compile(jsonBytes); err != nil {
+	if _, err := NewOfflineCompiler().Compile(jsonBytes); err != nil {
 		return &ValidationError{Type: contract.InterfaceTypeJSONSchema, Err: err}
 	}
 	return nil
+}
+
+// ErrExternalReference is returned (wrapped) when a JSON Schema refers to a document outside
+// itself. Validation never loads anything over the network or from disk, so a hub can't be made
+// to fetch URLs by the documents pushed to it.
+var ErrExternalReference = errors.New("external references are not loaded")
+
+// NewOfflineCompiler returns a JSON Schema compiler that refuses to load http, https and file
+// references. References inside the document, and the standard meta-schemas, still resolve.
+func NewOfflineCompiler() *jsonschema.Compiler {
+	c := jsonschema.NewCompiler()
+	refuse := func(url string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("%w: %s (only references inside the document resolve)", ErrExternalReference, url)
+	}
+	for _, scheme := range []string{"http", "https", "file"} {
+		c.RegisterLoader(scheme, refuse)
+	}
+	return c
 }
 
 // Detect reports whether raw is a valid OpenAPI or JSON Schema document.

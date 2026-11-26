@@ -1,0 +1,10 @@
+[
+  {"description": "pets", "schema": {"$ref": "https://example.com/pet.json"}, "tests": [
+    {"description": "a named pet", "data": {"name": "Rex"}, "valid": true},
+    {"description": "no name", "data": {"age": 2}, "valid": false},
+    {"description": "negative age", "data": {"name": "Rex", "age": -1}, "valid": false}
+  ]},
+  {"description": "inline", "schema": {"type": "integer"}, "tests": [
+    {"description": "an integer", "data": 1, "valid": true}
+  ]}
+]
