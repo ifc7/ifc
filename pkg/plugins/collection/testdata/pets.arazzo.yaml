@@ -1,0 +1,30 @@
+arazzo: 1.0.1
+info:
+  title: Adopt a pet
+  summary: List pets, then fetch one.
+  description: Lists pets and fetches the first one.
+  version: 1.0.0
+sourceDescriptions:
+  - name: pets
+    url: ./petstore.openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: adopt
+    summary: Adopt
+    description: Find a pet.
+    steps:
+      - stepId: list
+        description: List pets.
+        operationId: listPets
+        successCriteria: [{condition: $statusCode == 200}]
+        outputs: {petId: $response.body#/0/id}
+      - stepId: get
+        description: Get the pet.
+        operationId: $sourceDescriptions.pets.getPet
+        parameters: [{name: petId, in: path, value: $steps.list.outputs.petId}]
+        successCriteria: [{condition: $statusCode == 200}]
+      - stepId: path
+        description: Get by path.
+        operationPath: '{$sourceDescriptions.pets.url}#/paths/~1pets~1{petId}/get'
+        parameters: [{name: petId, in: path, value: $steps.list.outputs.petId}]
+        successCriteria: [{condition: $statusCode == 200}]

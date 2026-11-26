@@ -82,6 +82,8 @@ Use `ifc --help` for detailed explanations of commands.
 
 `ifc compare <before> <after>` - Compare two specifications for breaking changes with the default change-detector plugin.
 
+`ifc collection validate <file>` - Validate an Arazzo 1.0, Postman 2.1, JSON Schema Test Suite or OpenCollection 1.0 collection offline, with the same checks the hub runs when a collection version is created. Add `--interface <name|file>` to also check its operations against the bound specification (warnings), and `--strict` to fail on warnings too. Exits 2 when the collection has errors.
+
 ## CI
 
 In CI, `ifc` reads its credentials and hub from the environment and never prompts:

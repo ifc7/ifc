@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/collections/postman-2.1/v1.json",
+  "title": "Postman Collection Format v2.1 (structure)",
+  "type": "object",
+  "required": ["info", "item"],
+  "properties": {
+    "info": {
+      "type": "object",
+      "required": ["name", "schema"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "_postman_id": {"type": "string"},
+        "description": {"$ref": "#/$defs/description"},
+        "version": {"type": ["string", "object"]},
+        "schema": {
+          "type": "string",
+          "pattern": "/collection/v2\\.1\\.[0-9]+/collection\\.json$"
+        }
+      }
+    },
+    "item": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+    "event": {"$ref": "#/$defs/eventList"},
+    "variable": {"$ref": "#/$defs/variableList"},
+    "auth": {"$ref": "#/$defs/auth"},
+    "protocolProfileBehavior": {"type": "object"}
+  },
+  "$defs": {
+    "description": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "null"},
+        {"type": "object", "properties": {"content": {"type": "string"}, "type": {"type": "string"}, "version": true}}
+      ]
+    },
+    "entry": {
+      "anyOf": [{"$ref": "#/$defs/folder"}, {"$ref": "#/$defs/requestItem"}]
+    },
+    "folder": {
+      "type": "object",
+      "required": ["item"],
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"$ref": "#/$defs/description"},
+        "item": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+        "event": {"$ref": "#/$defs/eventList"},
+        "variable": {"$ref": "#/$defs/variableList"},
+        "auth": {"$ref": "#/$defs/auth"}
+      }
+    },
+    "requestItem": {
+      "type": "object",
+      "required": ["request"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"$ref": "#/$defs/description"},
+        "request": {"$ref": "#/$defs/request"},
+        "response": {"type": "array", "items": {"type": "object"}},
+        "event": {"$ref": "#/$defs/eventList"},
+        "variable": {"$ref": "#/$defs/variableList"}
+      }
+    },
+    "request": {
+      "anyOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "properties": {
+            "url": {"$ref": "#/$defs/url"},
+            "method": {"type": "string", "minLength": 1},
+            "header": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"$ref": "#/$defs/keyValue"}}]},
+            "body": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/body"}]},
+            "auth": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/auth"}]},
+            "description": {"$ref": "#/$defs/description"},
+            "proxy": {"type": "object"},
+            "certificate": {"type": "object"}
+          }
+        }
+      ]
+    },
+    "url": {
+      "anyOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "properties": {
+            "raw": {"type": "string"},
+            "protocol": {"type": "string"},
+            "host": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+            "port": {"type": "string"},
+            "path": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "object"}]}}]},
+            "query": {"type": "array", "items": {"$ref": "#/$defs/keyValue"}},
+            "hash": {"type": "string"},
+            "variable": {"$ref": "#/$defs/variableList"}
+          }
+        }
+      ]
+    },
+    "keyValue": {
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {"type": ["string", "null"]},
+        "value": {"type": ["string", "null"]},
+        "disabled": {"type": "boolean"},
+        "description": {"$ref": "#/$defs/description"}
+      }
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "mode": {"enum": ["raw", "urlencoded", "formdata", "file", "graphql"]},
+        "raw": {"type": "string"},
+        "urlencoded": {"type": "array", "items": {"type": "object"}},
+        "formdata": {"type": "array", "items": {"type": "object"}},
+        "file": {"type": "object"},
+        "graphql": {"type": "object"},
+        "options": {"type": "object"},
+        "disabled": {"type": "boolean"}
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["apikey", "awsv4", "basic", "bearer", "digest", "edgegrid", "hawk", "noauth", "oauth1", "oauth2", "ntlm", "jwt", "asap", "akamai"]}
+      }
+    },
+    "eventList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["listen"],
+        "properties": {
+          "id": {"type": "string"},
+          "listen": {"type": "string", "minLength": 1},
+          "script": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"type": "string"},
+              "exec": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+              "name": {"type": "string"}
+            }
+          },
+          "disabled": {"type": "boolean"}
+        }
+      }
+    },
+    "variableList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "anyOf": [{"required": ["id"]}, {"required": ["key"]}],
+        "properties": {
+          "id": {"type": "string"},
+          "key": {"type": "string"},
+          "value": true,
+          "type": {"enum": ["string", "boolean", "any", "number"]},
+          "name": {"type": "string"},
+          "description": {"$ref": "#/$defs/description"},
+          "system": {"type": "boolean"},
+          "disabled": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}
