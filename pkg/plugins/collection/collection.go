@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -189,16 +188,7 @@ func parseJSON(raw []byte) (any, []byte, *contract.Finding) {
 
 // offlineCompiler returns a JSON Schema compiler that can't load anything
 // from the network or the filesystem.
-func offlineCompiler() *jsonschema.Compiler {
-	c := jsonschema.NewCompiler()
-	refuse := func(url string) (io.ReadCloser, error) {
-		return nil, fmt.Errorf("loading %s is not allowed: only references inside the document resolve", url)
-	}
-	for _, scheme := range []string{"http", "https", "file"} {
-		c.RegisterLoader(scheme, refuse)
-	}
-	return c
-}
+func offlineCompiler() *jsonschema.Compiler { return spec.NewOfflineCompiler() }
 
 // aggregateKeywords only summarise their subschemas' errors, which are
 // reported where they happen instead.
