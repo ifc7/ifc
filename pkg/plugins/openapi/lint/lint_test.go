@@ -186,3 +186,24 @@ paths:
 		t.Fatal("ignored findings must not affect the plugin score")
 	}
 }
+
+// The engine ignores ifc7's x-ifc-scope extension; ifc7 applies it to the findings afterwards.
+func TestLintIgnoresScopeExtension(t *testing.T) {
+	raw := readSpec(t, "openapi-missing-opid.yaml")
+	base := lintWith(t, raw, "extends: spectral:oas\n")
+	scoped := lintWith(t, raw, `extends: spectral:oas
+x-ifc-scope:
+  changed: [operation-tags]
+rules:
+  info-must-have-x-owner:
+    given: $.info
+    severity: error
+    x-ifc-scope: changed
+    then:
+      field: x-owner
+      function: truthy
+`)
+	if !slices.Contains(ruleIDs(scoped), "info-must-have-x-owner") || len(scoped.Findings) != len(base.Findings)+1 {
+		t.Fatalf("scoped findings = %v, base = %v", ruleIDs(scoped), ruleIDs(base))
+	}
+}
