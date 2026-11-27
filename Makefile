@@ -22,7 +22,7 @@ generate:
 	go generate ./...
 
 .PHONY: build
-build: test generate
+build: generate
 	go build -ldflags "\
 		-X github.com/ifc7/ifc/internal.BuildVersion=$(VERSION) \
 		-X github.com/ifc7/ifc/internal.GitCommit=$(GIT_COMMIT) \
