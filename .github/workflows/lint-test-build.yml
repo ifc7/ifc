@@ -76,7 +76,11 @@ jobs:
         run: make compile
 
       - name: Save Go cache
-        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        # Save from main, or from any branch when nothing matched at all (bootstraps
+        # the cache before main has one). Otherwise PRs would just add cache churn.
+        if: >-
+          steps.go-cache.outputs.cache-hit != 'true' &&
+          (github.ref == 'refs/heads/main' || steps.go-cache.outputs.cache-matched-key == '')
         uses: actions/cache/save@v4
         with:
           path: |
