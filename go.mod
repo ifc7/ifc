@@ -9,15 +9,17 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/daveshanley/vacuum v0.41.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/ifc7/oapi-codegen/v2 v2.0.0-20261127050707-2ada9f50838a
 	github.com/kaptinlin/jsonschema v0.9.10
 	github.com/mattn/go-isatty v0.0.24
 	github.com/oapi-codegen/runtime v1.8.0
-	github.com/pb33f/go-yaml v0.1.1
-	github.com/pb33f/libopenapi v0.42.5
+	github.com/pb33f/go-yaml v0.2.0
+	github.com/pb33f/libopenapi v0.43.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	go.uber.org/mock v0.6.0
+	golang.org/x/mod v0.42.0
 	golang.org/x/sync v0.25.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -88,6 +90,7 @@ require (
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	modernc.org/libc v1.79.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/generation-input.json",
+  "title": "Generation plugin input",
+  "description": "Input contract for interface code-generation plugins.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["interfaceType", "document", "target", "package"],
+  "properties": {
+    "interfaceType": {
+      "$ref": "defs.json#/$defs/InterfaceType"
+    },
+    "document": {
+      "$ref": "defs.json#/$defs/SpecificationDocument",
+      "description": "The interface specification to generate from."
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
+    },
+    "package": {
+      "$ref": "#/$defs/Package"
+    },
+    "options": {
+      "$ref": "defs.json#/$defs/PluginOptions"
+    }
+  },
+  "$defs": {
+    "Target": {
+      "type": "object",
+      "description": "What kind of SDK to generate.",
+      "additionalProperties": false,
+      "required": ["language"],
+      "properties": {
+        "language": {
+          "$ref": "defs.json#/$defs/SdkLanguage"
+        }
+      }
+    },
+    "Package": {
+      "type": "object",
+      "description": "Identity of the package being generated. Generated code must use name for any self-references (for example Go import paths).",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Package identifier. Go: the module path including any /vN major suffix."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Version being generated (for example v1.2.0 or a Go pseudo-version)."
+        },
+        "details": {
+          "type": "object",
+          "description": "Language-specific package settings. Go: packageName (package clause identifier) and goVersion (go directive).",
+          "default": {},
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "interfaceType": "OPENAPI",
+      "document": {
+        "specification": "b3BlbmFwaTogIjMuMC4zIgo=",
+        "fileFormat": "yaml"
+      },
+      "target": {
+        "language": "go"
+      },
+      "package": {
+        "name": "ifc7.dev/go/org/acme/payments/v2",
+        "version": "v2.1.0",
+        "details": {
+          "packageName": "payments",
+          "goVersion": "1.27"
+        }
+      },
+      "options": {}
+    }
+  ]
+}

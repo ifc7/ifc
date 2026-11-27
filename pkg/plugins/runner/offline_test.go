@@ -39,6 +39,14 @@ func TestNothingFetchesRemoteReferences(t *testing.T) {
 		"compare OpenAPI": func() {
 			_, _, _ = reg.Compare(contract.CompareInput{InterfaceType: contract.InterfaceTypeOpenAPI, Before: doc(oas), After: doc(oas)})
 		},
+		"generate OpenAPI Go": func() {
+			_, _, _ = reg.Generate(contract.GenerationInput{
+				InterfaceType: contract.InterfaceTypeOpenAPI,
+				Document:      doc(oas),
+				Target:        contract.GenerationTarget{Language: contract.SdkLanguageGo},
+				Package:       contract.GenerationPackage{Name: "example.com/x", Version: "v1.0.0"},
+			})
+		},
 		"compare JSON Schema": func() {
 			_, _, _ = reg.Compare(contract.CompareInput{InterfaceType: contract.InterfaceTypeJSONSchema, Before: doc(js), After: doc(js)})
 		},
