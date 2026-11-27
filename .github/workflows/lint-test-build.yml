@@ -6,6 +6,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Shared by both jobs. The key is only *saved* by the test job on main; every
+  # other run restores the newest match, so a go.sum change gives an incremental
+  # rebuild instead of recompiling the large vacuum dependency tree from scratch.
+  GO_CACHE_PREFIX: go-linux
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -17,16 +23,26 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
-          cache-dependency-path: go.sum
-          cache: true
+          cache: false
           check-latest: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.sum') }}-
+            ${{ env.GO_CACHE_PREFIX }}-
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14
 
-  test:
+  test-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,34 +52,34 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
-          cache-dependency-path: go.sum
-          cache: true
+          cache: false
           check-latest: false
+
+      - name: Restore Go cache
+        id: go-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.sum') }}-
+            ${{ env.GO_CACHE_PREFIX }}-
 
       - name: Run test
-        run: make test
+        run: make test-ci
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: 'go.mod'
-          cache-dependency-path: go.sum
-          cache: true
-          check-latest: false
-
-      - name: Add Go bin to PATH
-        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Install code generation tools
-        run: |
-          go install go.uber.org/mock/mockgen@v0.6.0
-          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
-
+      # Reuses the packages just compiled by the test step. Generated code is
+      # committed, so CI does not run `go generate` or install codegen tools.
       - name: Run build
-        run: make build
+        run: make compile
+
+      - name: Save Go cache
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.sum') }}-${{ github.sha }}

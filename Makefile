@@ -17,12 +17,23 @@ test:
 	@echo "\nTotal Coverage:"
 	@go tool cover -func=coverage.out | awk '/^total:/ {print $$3}'
 
+.PHONY: test-ci
+# test-ci: no coverage instrumentation (-coverpkg=./... relinks every test binary
+# against every package, including the very large vacuum dependency tree) and
+# stripped binaries so the ~14 vacuum-linking test binaries link faster.
+test-ci:
+	go test ./... -ldflags="-s -w"
+
 .PHONY: generate
 generate:
 	go generate ./...
 
 .PHONY: build
-build: generate
+build: generate compile
+
+.PHONY: compile
+# compile: build the binary without regenerating code (generated files are committed)
+compile:
 	go build -ldflags "\
 		-X github.com/ifc7/ifc/internal.BuildVersion=$(VERSION) \
 		-X github.com/ifc7/ifc/internal.GitCommit=$(GIT_COMMIT) \
