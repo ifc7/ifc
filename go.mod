@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/daveshanley/vacuum v0.41.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/ifc7/oapi-codegen/v2 v2.0.0
+	github.com/ifc7/oapi-codegen/v2 v2.0.0-20261127050707-2ada9f50838a
 	github.com/kaptinlin/jsonschema v0.9.10
 	github.com/mattn/go-isatty v0.0.24
 	github.com/oapi-codegen/runtime v1.8.0
@@ -96,5 +96,3 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 	modernc.org/sqlite v1.61.0 // indirect
 )
-
-replace github.com/ifc7/oapi-codegen/v2 => /tmp/claude-0/fork/oapi-codegen
