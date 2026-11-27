@@ -1,4 +1,4 @@
-// Package runner resolves and invokes default lint/compare plugins by interface type.
+// Package runner resolves and invokes default lint, compare and generate plugins by interface type.
 package runner
 
 import (
@@ -10,6 +10,7 @@ import (
 	jsonschemacompare "github.com/ifc7/ifc/pkg/plugins/jsonschema/compare"
 	jsonschemalint "github.com/ifc7/ifc/pkg/plugins/jsonschema/lint"
 	openapicompare "github.com/ifc7/ifc/pkg/plugins/openapi/compare"
+	openapigenerate "github.com/ifc7/ifc/pkg/plugins/openapi/generate"
 	openapilint "github.com/ifc7/ifc/pkg/plugins/openapi/lint"
 )
 
@@ -17,8 +18,9 @@ import (
 type Action string
 
 const (
-	ActionLint    Action = "lint"
-	ActionCompare Action = "compare"
+	ActionLint     Action = "lint"
+	ActionCompare  Action = "compare"
+	ActionGenerate Action = "generate"
 )
 
 // Linter runs quality analysis on a single specification.
@@ -33,10 +35,23 @@ type Comparator interface {
 	Compare(input contract.CompareInput) (contract.CompareOutput, error)
 }
 
+// Generator produces SDK source files from a single specification.
+type Generator interface {
+	ID() string
+	Generate(input contract.GenerationInput) (contract.GenerationOutput, error)
+}
+
+// generatorKey selects a generator by interface type and target language.
+type generatorKey struct {
+	typ  contract.InterfaceType
+	lang contract.SdkLanguage
+}
+
 // Registry maps interface types to default plugins.
 type Registry struct {
 	linters     map[contract.InterfaceType]Linter
 	comparators map[contract.InterfaceType]Comparator
+	generators  map[generatorKey]Generator
 }
 
 // DefaultRegistry returns the built-in default plugins for each type/action.
@@ -49,6 +64,9 @@ func DefaultRegistry() *Registry {
 		comparators: map[contract.InterfaceType]Comparator{
 			contract.InterfaceTypeOpenAPI:    openapicompare.Plugin{},
 			contract.InterfaceTypeJSONSchema: jsonschemacompare.Plugin{},
+		},
+		generators: map[generatorKey]Generator{
+			{contract.InterfaceTypeOpenAPI, contract.SdkLanguageGo}: openapigenerate.Plugin{},
 		},
 	}
 }
@@ -80,6 +98,29 @@ func (r *Registry) Compare(input contract.CompareInput) (contract.CompareOutput,
 		return contract.CompareOutput{}, cmp.ID(), err
 	}
 	return out, cmp.ID(), nil
+}
+
+// ErrNoGenerator is returned (wrapped) when no generate plugin handles an interface type and
+// language, for example JSON Schema.
+var ErrNoGenerator = errors.New("no generate plugin")
+
+// HasGenerator reports whether a default generator exists for typ and lang.
+func (r *Registry) HasGenerator(typ contract.InterfaceType, lang contract.SdkLanguage) bool {
+	_, ok := r.generators[generatorKey{typ, lang}]
+	return ok
+}
+
+// Generate invokes the default generator for the input's interface type and target language.
+func (r *Registry) Generate(input contract.GenerationInput) (contract.GenerationOutput, string, error) {
+	gen, ok := r.generators[generatorKey{input.InterfaceType, input.Target.Language}]
+	if !ok {
+		return contract.GenerationOutput{}, "", fmt.Errorf("%w for interface type %q and language %q", ErrNoGenerator, input.InterfaceType, input.Target.Language)
+	}
+	out, err := gen.Generate(input)
+	if err != nil {
+		return out, gen.ID(), err
+	}
+	return out, gen.ID(), nil
 }
 
 // ErrBudgetExceeded is returned (wrapped) when a plugin does not finish
@@ -148,4 +189,31 @@ func budgetErr(err error) error {
 		return fmt.Errorf("%w: %w", ErrBudgetExceeded, err)
 	}
 	return err
+}
+
+// GenerateContext is Generate with an overall time budget, like LintContext.
+func (r *Registry) GenerateContext(ctx context.Context, input contract.GenerationInput) (contract.GenerationOutput, string, error) {
+	type result struct {
+		out contract.GenerationOutput
+		id  string
+		err error
+	}
+	id := ""
+	if g, ok := r.generators[generatorKey{input.InterfaceType, input.Target.Language}]; ok {
+		id = g.ID()
+	}
+	if err := ctx.Err(); err != nil {
+		return contract.GenerationOutput{}, id, budgetErr(err)
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, id, err := r.Generate(input)
+		done <- result{out, id, err}
+	}()
+	select {
+	case res := <-done:
+		return res.out, res.id, res.err
+	case <-ctx.Done():
+		return contract.GenerationOutput{}, id, budgetErr(ctx.Err())
+	}
 }

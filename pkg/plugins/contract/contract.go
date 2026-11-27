@@ -1,4 +1,4 @@
-// Package contract defines the lint and compare plugin input/output types
+// Package contract defines the lint, compare and generation plugin input/output types
 // matching the published JSON Schema contracts at
 // https://ifc7.dev/schemas/plugins/v0/ and https://ifc7.dev/schemas/plugins/v1/.
 //
@@ -223,4 +223,50 @@ type Change struct {
 	Stability string `json:"stability,omitempty"`
 	// Fingerprint identifies the change by kind and pointer.
 	Fingerprint string `json:"fingerprint"`
+}
+
+// SdkLanguage is a target language for generated SDKs.
+type SdkLanguage string
+
+// SdkLanguageGo generates a Go module.
+const SdkLanguageGo SdkLanguage = "go"
+
+// GenerationInput is the input contract for code-generation plugins.
+type GenerationInput struct {
+	InterfaceType InterfaceType         `json:"interfaceType"`
+	Document      SpecificationDocument `json:"document"`
+	Target        GenerationTarget      `json:"target"`
+	Package       GenerationPackage     `json:"package"`
+	// Options are the language's generation settings (for Go, the value of
+	// the interface's sdkGeneration.languages.go setting).
+	Options map[string]any `json:"options,omitempty"`
+}
+
+// GenerationTarget selects the kind of SDK to generate.
+type GenerationTarget struct {
+	Language SdkLanguage `json:"language"`
+}
+
+// GenerationPackage is the identity of the package being generated.
+type GenerationPackage struct {
+	// Name is the package identifier (Go: module path including any /vN suffix).
+	Name string `json:"name"`
+	// Version is the version being generated (a semver or Go pseudo-version).
+	Version string `json:"version"`
+	// Details are language-specific settings. Go: packageName and goVersion.
+	Details map[string]any `json:"details,omitempty"`
+}
+
+// GenerationOutput is the output contract for code-generation plugins.
+type GenerationOutput struct {
+	Files []GeneratedFile `json:"files"`
+	Raw   string          `json:"raw,omitempty"`
+	Extra map[string]any  `json:"extra,omitempty"`
+}
+
+// GeneratedFile is a single generated file. Path is relative to the
+// generation root and uses POSIX separators.
+type GeneratedFile struct {
+	Path     string `json:"path"`
+	Contents string `json:"contents"`
 }

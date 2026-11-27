@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,4 +108,61 @@ func readSpec(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestRegistry_Generate(t *testing.T) {
+	t.Parallel()
+	reg := runner.DefaultRegistry()
+	raw := readSpec(t, "openapi-ok.yaml")
+	in := func(typ contract.InterfaceType) contract.GenerationInput {
+		return contract.GenerationInput{
+			InterfaceType: typ,
+			Document:      contract.NewSpecificationDocument(raw, contract.FileFormatYAML),
+			Target:        contract.GenerationTarget{Language: contract.SdkLanguageGo},
+			Package:       contract.GenerationPackage{Name: "example.com/pets", Version: "v1.0.0"},
+		}
+	}
+	t.Run("openapi go", func(t *testing.T) {
+		t.Parallel()
+		out, id, err := reg.Generate(in(contract.InterfaceTypeOpenAPI))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id != "openapi-go@v1" {
+			t.Fatalf("plugin id = %q", id)
+		}
+		if len(out.Files) == 0 {
+			t.Fatal("no files")
+		}
+	})
+	t.Run("json schema has no generator", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := reg.Generate(in(contract.InterfaceTypeJSONSchema))
+		if !errors.Is(err, runner.ErrNoGenerator) {
+			t.Fatalf("err = %v, want ErrNoGenerator", err)
+		}
+	})
+}
+
+func TestRegistry_HasGenerator(t *testing.T) {
+	t.Parallel()
+	reg := runner.DefaultRegistry()
+	tests := []struct {
+		name string
+		typ  contract.InterfaceType
+		lang contract.SdkLanguage
+		want bool
+	}{
+		{"openapi go", contract.InterfaceTypeOpenAPI, contract.SdkLanguageGo, true},
+		{"json schema go", contract.InterfaceTypeJSONSchema, contract.SdkLanguageGo, false},
+		{"openapi unknown language", contract.InterfaceTypeOpenAPI, "ts", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := reg.HasGenerator(tt.typ, tt.lang); got != tt.want {
+				t.Fatalf("HasGenerator = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

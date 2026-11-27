@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ifc7.dev/schemas/plugins/v0/generation-output.json",
+  "title": "Generation plugin output",
+  "description": "Output contract for interface code-generation plugins. Describes the files produced from a specification. An empty files array is still valid output. For Go, the host owns go.mod and rewrites its module directive to match package.name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["files"],
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "Generated files. Paths must be unique within the array.",
+      "items": {
+        "$ref": "#/$defs/GeneratedFile"
+      }
+    },
+    "raw": {
+      "$ref": "defs.json#/$defs/RawOutput",
+      "description": "Optional generator log."
+    },
+    "extra": {
+      "$ref": "defs.json#/$defs/SemanticExtra",
+      "description": "Optional generator-specific metadata."
+    },
+    "options": {
+      "$ref": "defs.json#/$defs/PluginOptions"
+    }
+  },
+  "$defs": {
+    "GeneratedFile": {
+      "type": "object",
+      "description": "A single generated file and its contents.",
+      "additionalProperties": false,
+      "required": ["path", "contents"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Destination path relative to the generation root. Use POSIX separators. Must not be absolute or contain '..' segments."
+        },
+        "contents": {
+          "type": "string",
+          "description": "File contents as a UTF-8 string. Empty string is allowed."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "files": [
+        {
+          "path": "client.go",
+          "contents": "package payments\n"
+        }
+      ],
+      "options": {}
+    }
+  ]
+}

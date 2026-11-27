@@ -3,7 +3,7 @@
   "$id": "https://ifc7.dev/schemas/plugins/v0/defs.json",
   "$comment": "Shared definitions for ifc7 plugin input/output contracts (v0).",
   "title": "Plugin contract shared definitions",
-  "description": "Reusable building blocks for lint and compare plugin schemas.",
+  "description": "Reusable building blocks for lint, compare, and generation plugin schemas.",
   "$defs": {
     "InterfaceType": {
       "type": "string",
@@ -49,6 +49,12 @@
     "RawOutput": {
       "type": "string",
       "description": "Textual detail for this run. Empty string is allowed when there is nothing to report."
+    },
+    "SdkLanguage": {
+      "type": "string",
+      "description": "Target language for generated SDKs. Expand this enum when new languages are supported.",
+      "enum": ["go"],
+      "examples": ["go"]
     }
   }
 }

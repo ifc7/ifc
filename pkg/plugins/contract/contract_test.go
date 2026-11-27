@@ -272,3 +272,29 @@ func TestRealLintOutputMatchesV1Schema(t *testing.T) {
 	}
 	assertValid(t, schema, out)
 }
+
+func TestGenerationInputMatchesSchema(t *testing.T) {
+	schema := loadSchema(t, "generation-input.json")
+	in := contract.GenerationInput{
+		InterfaceType: contract.InterfaceTypeOpenAPI,
+		Document:      contract.NewSpecificationDocument([]byte("openapi: \"3.0.3\"\n"), contract.FileFormatYAML),
+		Target:        contract.GenerationTarget{Language: contract.SdkLanguageGo},
+		Package: contract.GenerationPackage{
+			Name:    "ifc7.dev/go/org/acme/payments/v2",
+			Version: "v2.1.0",
+			Details: map[string]any{"packageName": "payments", "goVersion": "1.27"},
+		},
+		Options: map[string]any{},
+	}
+	assertValid(t, schema, in)
+}
+
+func TestGenerationOutputMatchesSchema(t *testing.T) {
+	schema := loadSchema(t, "generation-output.json")
+	out := contract.GenerationOutput{
+		Files: []contract.GeneratedFile{{Path: "client.gen.go", Contents: "package payments\n"}},
+		Raw:   "generated 1 file\n",
+		Extra: map[string]any{"operations": 3},
+	}
+	assertValid(t, schema, out)
+}

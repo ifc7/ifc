@@ -1,0 +1,93 @@
+openapi: "3.0.3"
+info:
+  title: Petstore
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: A list of pets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+    post:
+      operationId: createPet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPet"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        default:
+          description: Error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A pet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: Not found.
+components:
+  schemas:
+    NewPet:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        tag:
+          type: string
+    Pet:
+      allOf:
+        - $ref: "#/components/schemas/NewPet"
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+              format: uuid
+            bornAt:
+              type: string
+              format: date-time
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
