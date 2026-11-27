@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ifc7/oapi-codegen/v2/pkg/codegen"
-	"github.com/ifc7/oapi-codegen/v2/pkg/engine"
-	"github.com/ifc7/oapi-codegen/v2/pkg/engine/libopenapi"
+	"github.com/ifc7/oapi-codegen/pkg/codegen"
+	"github.com/ifc7/oapi-codegen/pkg/engine"
+	"github.com/ifc7/oapi-codegen/pkg/engine/libopenapi"
 	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v3"
 
